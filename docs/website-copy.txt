@@ -1,0 +1,28 @@
+HP 15C Flasher for Mac
+
+Native macOS app that flashes HP 15C Collector’s Edition firmware over the USB-C pogo programming cable. Windows SAM-BA is not required.
+
+Requirements
+- macOS 13 or later
+- HP 15C Collector’s Edition
+- Official USB-C (or USB-A + adapter) pogo programming cable
+- A 112 KB firmware .bin you already have (this download does not include HP firmware)
+
+How to install
+1. Download HP15CFlasher-x.y.z-N.dmg (marketing version and build number)
+2. Verify the SHA-256 posted with the file
+3. Open the disk image and drag HP 15C Flasher to Applications
+
+How to flash
+1. Open the battery door and seat the keyed pogo connector
+2. Plug the cable into the Mac
+3. Hold ERASE, press RESET, release ERASE
+4. In the app: Save Backup, Choose Firmware, Flash
+5. Press RESET on the cable, then ON. Pr Error is expected; user memory was cleared
+
+The bootloader at 0x0000–0x3FFF is never overwritten.
+
+Privacy
+The app is offline. No telemetry, no network, no automatic diagnostics. Firmware files never leave this Mac.
+
+Not for HP 15C Limited Edition, pre-2015 HP 12C, HP 20b, or HP 30b. Those pogo ports are a different protocol and voltage; this cable can destroy them.

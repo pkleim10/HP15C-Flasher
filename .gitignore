@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+.swiftpm/
+build/
+dist/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+signing.env
