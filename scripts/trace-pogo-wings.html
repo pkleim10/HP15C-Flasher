@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pogo Wing Tracer — HP 15C Flasher</title>
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --panel: #141418;
+            --line: #c8c8c8;
+            --accent: #7ec8a3;
+            --warn: #e0a060;
+            --muted: #888890;
+            --wing: #6ec8e0;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: var(--bg);
+            color: var(--line);
+            font-family: "IBM Plex Mono", "SF Mono", Consolas, monospace;
+            font-size: 13px;
+            display: flex;
+            flex-direction: column;
+        }
+        header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px 16px;
+            align-items: center;
+            padding: 10px 14px;
+            background: var(--panel);
+            border-bottom: 1px solid #222;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: var(--accent);
+        }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        button, label.btn {
+            background: #1e1e24;
+            color: var(--line);
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font: inherit;
+            cursor: pointer;
+        }
+        button:hover, label.btn:hover { border-color: var(--accent); color: #fff; }
+        button.active { border-color: var(--accent); background: #1a2e24; color: var(--accent); }
+        button.danger:hover { border-color: #c66; color: #f88; }
+        label.btn input { display: none; }
+        #zoomLabel {
+            min-width: 3.5em;
+            color: var(--accent);
+            font-variant-numeric: tabular-nums;
+        }
+        #stageWrap {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 16px;
+            overflow: auto;
+        }
+        #stage {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            flex-shrink: 0;
+            border: 1px solid #333;
+            box-shadow: 0 0 0 1px #000, 0 12px 40px rgba(0,0,0,0.5);
+            cursor: crosshair;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #stage.panning { cursor: grabbing; }
+        canvas {
+            position: absolute;
+            inset: 0;
+            width: 800px;
+            height: 600px;
+            image-rendering: pixelated;
+        }
+        #hud {
+            padding: 8px 14px 14px;
+            background: var(--panel);
+            border-top: 1px solid #222;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        @media (max-width: 900px) {
+            #hud { grid-template-columns: 1fr; }
+        }
+        .panel h2 {
+            margin: 0 0 6px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+        textarea {
+            width: 100%;
+            height: 180px;
+            background: #0c0c10;
+            color: var(--accent);
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 8px;
+            font: inherit;
+            font-size: 11px;
+            resize: vertical;
+        }
+        .hint { color: var(--muted); line-height: 1.45; margin: 0; }
+        .hint kbd {
+            display: inline-block;
+            padding: 1px 5px;
+            border: 1px solid #444;
+            border-radius: 3px;
+            background: #1a1a1e;
+            font-size: 11px;
+        }
+        #status { color: var(--warn); min-height: 1.2em; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>POGO WING TRACER</h1>
+        <div class="row">
+            <label class="btn">Load photo
+                <input type="file" id="fileInput" accept="image/*">
+            </label>
+            <label class="btn">Load JSON
+                <input type="file" id="jsonInput" accept="application/json,.json">
+            </label>
+        </div>
+        <div class="row">
+            <button type="button" id="zoomOutBtn">−</button>
+            <span id="zoomLabel">100%</span>
+            <button type="button" id="zoomInBtn">+</button>
+            <button type="button" id="zoomResetBtn">Reset view</button>
+        </div>
+        <div class="row">
+            <button type="button" id="nodeMode" class="active">Place / drag</button>
+            <button type="button" id="boxMode">Set plug box</button>
+            <button type="button" id="undoBtn">Undo</button>
+            <button type="button" id="deleteBtn" class="danger">Delete node</button>
+            <button type="button" id="clearBtn" class="danger">Clear nodes</button>
+        </div>
+        <div class="row">
+            <button type="button" id="exportBtn">Export JSON</button>
+            <button type="button" id="copySwiftBtn">Copy Swift snippet</button>
+            <button type="button" id="pasteBtn">Paste previous</button>
+            <label style="color:var(--muted)">BG opacity
+                <input type="range" id="opacity" min="20" max="100" value="85" style="vertical-align:middle">
+            </label>
+            <label style="color:var(--muted)">
+                <input type="checkbox" id="showHousing" checked> Housing overlay
+            </label>
+            <label style="color:var(--muted)">
+                <input type="checkbox" id="showMirror" checked> Mirror right
+            </label>
+        </div>
+        <div id="status"></div>
+    </header>
+
+    <div id="stageWrap">
+        <div id="stage">
+            <canvas id="bg" width="800" height="600"></canvas>
+            <canvas id="fg" width="800" height="600"></canvas>
+        </div>
+    </div>
+
+    <div id="hud">
+        <div class="panel">
+            <h2>How to use</h2>
+            <p class="hint">
+                Same idea as the lunar-lander ship tracer: load a photo, mark the
+                drawing box, click the left-wing outline, paste Swift into
+                <code>PogoWingOutline.left</code> in <code>WizardDiagrams.swift</code>.<br><br>
+                1. Load a side-view photo (pins down). A reference auto-loads from
+                   <code>scripts/references/pogo-plug.png</code>.<br>
+                2. <strong>Set plug box</strong>: click the top-left, then bottom-right
+                   of the full plug (cable top through pin tips). That box is (0,0)–(1,1)
+                   in the Swift drawing.<br>
+                3. <strong>Place / drag</strong> the <em>left</em> wing (closed outline).
+                   Click a segment to insert <em>between</em> those two nodes.
+                   Drag to move. Select a node, then <strong>Delete node</strong>,
+                   right-click, or <kbd>⌫</kbd>.<br>
+                4. <strong>Scroll</strong> zoom · <kbd>Space</kbd>+drag pan.<br>
+                5. <strong>Copy Swift snippet</strong> and paste into
+                   <code>App/Diagrams/WizardDiagrams.swift</code>.
+                   The right wing is mirrored automatically.<br>
+                6. <strong>Paste previous</strong> (or paste into the output box)
+                   reloads a prior Swift snippet or JSON export so you can keep editing.<br><br>
+                <kbd>N</kbd> nodes · <kbd>B</kbd> plug box · <kbd>Z</kbd> undo ·
+                <kbd>+</kbd>/<kbd>−</kbd> zoom
+            </p>
+        </div>
+        <div class="panel">
+            <h2>Output <span id="counts" style="color:var(--muted)"></span></h2>
+            <textarea id="out" placeholder="Set the plug box, then trace the left wing. Paste a previous Swift snippet or JSON here to resume."></textarea>
+        </div>
+    </div>
+
+    <script>
+        const W = 800, H = 600;
+        const ZOOM_MIN = 1;
+        const ZOOM_MAX = 24;
+        const BODY_TOP = 0.215;
+        const BODY_BOTTOM = 0.80;
+        const BODY_H = BODY_BOTTOM - BODY_TOP;
+        const PHI = (1 + Math.sqrt(5)) / 2;
+        const WIDTH_BOOST = 1.10;
+        const NOSE_BOTTOM = 0.865;
+        const CABLE_FRAC = 0.39;
+        const NOSE_FRAC = 0.72;
+
+        const bg = document.getElementById('bg');
+        const fg = document.getElementById('fg');
+        const bctx = bg.getContext('2d');
+        const ctx = fg.getContext('2d');
+        const stage = document.getElementById('stage');
+        const statusEl = document.getElementById('status');
+        const outEl = document.getElementById('out');
+        const countsEl = document.getElementById('counts');
+        const zoomLabel = document.getElementById('zoomLabel');
+
+        let img = null;
+        let imgLayout = null; // {dx,dy,dw,dh} in world space
+        let bgOpacity = 0.85;
+        let showHousing = true;
+        let showMirror = true;
+        let mode = 'node'; // node | box
+        let nodes = []; // {id,x,y} world / image space
+        let nextId = 1;
+        let selectedId = null;
+        let plugBox = null; // {x,y,w,h} world space
+        let boxDraft = null; // first corner
+        let history = [];
+
+        let viewZoom = 1;
+        let viewPanX = 0;
+        let viewPanY = 0;
+        let spaceDown = false;
+        let panning = false;
+        let panLast = null;
+        let didPan = false;
+        let dragging = null; // {id, last}
+        let didDrag = false;
+        let hoverWorld = null;
+
+        function setStatus(msg) {
+            statusEl.textContent = msg || '';
+        }
+
+        function pushHistory() {
+            history.push(JSON.stringify({ nodes, nextId, selectedId, plugBox, boxDraft }));
+            if (history.length > 80) history.shift();
+        }
+
+        function undo() {
+            if (!history.length) return;
+            const snap = JSON.parse(history.pop());
+            nodes = snap.nodes;
+            nextId = snap.nextId;
+            selectedId = snap.selectedId;
+            plugBox = snap.plugBox;
+            boxDraft = snap.boxDraft;
+            setStatus('Undo');
+            redraw();
+        }
+
+        function snapRadius() {
+            return 12 / viewZoom;
+        }
+
+        function nearestNode(x, y, maxDist) {
+            let best = null;
+            let bestD = maxDist;
+            for (const n of nodes) {
+                const d = Math.hypot(n.x - x, n.y - y);
+                if (d < bestD) {
+                    bestD = d;
+                    best = n;
+                }
+            }
+            return best;
+        }
+
+        function findNode(id) {
+            return nodes.find(n => n.id === id);
+        }
+
+        function screenToWorld(sx, sy) {
+            const rect = stage.getBoundingClientRect();
+            const cx = (sx - rect.left) * (W / rect.width);
+            const cy = (sy - rect.top) * (H / rect.height);
+            return {
+                x: viewPanX + cx / viewZoom,
+                y: viewPanY + cy / viewZoom
+            };
+        }
+
+        function setMode(m) {
+            mode = m;
+            boxDraft = null;
+            document.getElementById('nodeMode').classList.toggle('active', m === 'node');
+            document.getElementById('boxMode').classList.toggle('active', m === 'box');
+            setStatus(m === 'node'
+                ? 'Click to place or insert nodes; drag to move'
+                : 'Click top-left of the plug, then bottom-right');
+        }
+
+        function distToSegment(p, a, b) {
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const len2 = dx * dx + dy * dy;
+            if (len2 < 1e-6) return { d: Math.hypot(p.x - a.x, p.y - a.y), t: 0 };
+            let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+            t = Math.max(0, Math.min(1, t));
+            const qx = a.x + t * dx;
+            const qy = a.y + t * dy;
+            return { d: Math.hypot(p.x - qx, p.y - qy), t };
+        }
+
+        function nearestSegment(x, y) {
+            if (nodes.length < 2) return null;
+            let best = null;
+            let bestD = Infinity;
+            for (let i = 0; i < nodes.length; i++) {
+                const a = nodes[i];
+                const b = nodes[(i + 1) % nodes.length];
+                const hit = distToSegment({ x, y }, a, b);
+                if (hit.d < bestD) {
+                    bestD = hit.d;
+                    best = { index: i + 1, t: hit.t, d: hit.d, x: a.x + (b.x - a.x) * hit.t, y: a.y + (b.y - a.y) * hit.t };
+                }
+            }
+            return best;
+        }
+
+        function addNode(x, y) {
+            const near = nearestNode(x, y, snapRadius());
+            if (near) {
+                selectedId = near.id;
+                setStatus(`Selected node #${near.id} — Delete node or ⌫ to remove`);
+                return near;
+            }
+            pushHistory();
+            const n = { id: nextId++, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+            if (nodes.length >= 2) {
+                const insert = nearestSegment(x, y);
+                nodes.splice(insert.index, 0, n);
+                setStatus(`Inserted node #${n.id} between ${insert.index} and ${insert.index + 1}`);
+            } else {
+                nodes.push(n);
+                setStatus(`Placed node #${n.id}`);
+            }
+            selectedId = n.id;
+            return n;
+        }
+
+        function deleteSelected() {
+            if (selectedId == null) {
+                setStatus('Select a node first, then Delete');
+                return;
+            }
+            pushHistory();
+            const id = selectedId;
+            const idx = nodes.findIndex(n => n.id === id);
+            nodes = nodes.filter(n => n.id !== id);
+            if (nodes.length) {
+                const next = nodes[Math.min(idx, nodes.length - 1)];
+                selectedId = next.id;
+            } else {
+                selectedId = null;
+            }
+            setStatus(`Deleted node #${id}`);
+            redraw();
+        }
+
+        function bodyEdges() {
+            const boxW = plugBox ? plugBox.w : W;
+            const boxH = plugBox ? plugBox.h : H;
+            const w = (BODY_H * boxH / PHI) / boxW * WIDTH_BOOST;
+            const left = (1 - w) / 2;
+            return { left, right: 1 - left };
+        }
+
+        function worldToNorm(p) {
+            if (!plugBox) return null;
+            return [
+                Math.round(((p.x - plugBox.x) / plugBox.w) * 1000) / 1000,
+                Math.round(((p.y - plugBox.y) / plugBox.h) * 1000) / 1000
+            ];
+        }
+
+        function normToWorld(nx, ny) {
+            if (!plugBox) return { x: nx * W, y: ny * H };
+            return {
+                x: plugBox.x + nx * plugBox.w,
+                y: plugBox.y + ny * plugBox.h
+            };
+        }
+
+        function buildExport() {
+            const left = plugBox ? nodes.map(n => worldToNorm(n)).filter(Boolean) : [];
+            return {
+                imageSpace: {
+                    plugBox,
+                    nodes: nodes.map(n => ({ id: n.id, x: n.x, y: n.y }))
+                },
+                drawing: {
+                    note: '0–1 space of PogoPlugDrawing. Right wing is mirrored in Swift.',
+                    left
+                }
+            };
+        }
+
+        function fmt(n) {
+            return (Math.round(n * 1000) / 1000).toFixed(3);
+        }
+
+        function parseImported(text) {
+            const raw = (text || '').trim();
+            if (!raw) return null;
+            try {
+                const data = JSON.parse(raw);
+                if (data.imageSpace && Array.isArray(data.imageSpace.nodes)) {
+                    return { imageSpace: data.imageSpace };
+                }
+                const left = (data.drawing && data.drawing.left) || data.left || data.nodes || data;
+                if (Array.isArray(left) && left.length) {
+                    if (Array.isArray(left[0])) {
+                        return { normalized: left.map(p => [Number(p[0]), Number(p[1])]) };
+                    }
+                    if (left[0] && left[0].x != null) {
+                        return { normalized: left.map(p => [Number(p.x), Number(p.y)]) };
+                    }
+                }
+            } catch (_) {}
+            const pts = [];
+            const re = /CGPoint\s*\(\s*x:\s*([-+0-9.eE]+)\s*,\s*y:\s*([-+0-9.eE]+)\s*\)/g;
+            let m;
+            while ((m = re.exec(raw))) {
+                pts.push([Number(m[1]), Number(m[2])]);
+            }
+            if (pts.length) return { normalized: pts };
+            return null;
+        }
+
+        function applyNormalized(left) {
+            if (!plugBox) {
+                if (imgLayout) {
+                    plugBox = {
+                        x: Math.round(imgLayout.dx * 10) / 10,
+                        y: Math.round(imgLayout.dy * 10) / 10,
+                        w: Math.round(imgLayout.dw * 10) / 10,
+                        h: Math.round(imgLayout.dh * 10) / 10
+                    };
+                } else {
+                    plugBox = { x: 120, y: 20, w: 560, h: 560 };
+                }
+            }
+            nodes = left.map((p, i) => {
+                const w = normToWorld(p[0], p[1]);
+                return { id: i + 1, x: Math.round(w.x * 10) / 10, y: Math.round(w.y * 10) / 10 };
+            });
+            nextId = nodes.length + 1;
+            selectedId = null;
+        }
+
+        function applyImported(text) {
+            const parsed = parseImported(text);
+            if (!parsed) {
+                setStatus('Paste a previous Swift snippet or JSON export');
+                return false;
+            }
+            pushHistory();
+            if (parsed.imageSpace) {
+                const src = parsed.imageSpace;
+                nodes = (src.nodes || []).map(n => ({ id: n.id, x: n.x, y: n.y }));
+                plugBox = src.plugBox || plugBox;
+                nextId = nodes.reduce((m, n) => Math.max(m, n.id), 0) + 1;
+                selectedId = null;
+            } else {
+                applyNormalized(parsed.normalized);
+            }
+            setStatus(`Pasted previous run: ${nodes.length} nodes`);
+            redraw();
+            return true;
+        }
+
+        function buildSwiftSnippet() {
+            const data = buildExport();
+            if (!plugBox || !data.drawing.left.length) {
+                return '// Set the plug box and add left-wing nodes first';
+            }
+            const lines = data.drawing.left.map(([x, y]) =>
+                `        CGPoint(x: ${fmt(x)}, y: ${fmt(y)}),`
+            );
+            return [
+                '// Paste into App/Diagrams/WizardDiagrams.swift — PogoWingOutline.left',
+                'enum PogoWingOutline {',
+                '    /// Closed left-wing outline in 0–1 drawing space. Right wing is mirrored.',
+                '    static let left: [CGPoint] = [',
+                ...lines,
+                '    ]',
+                '}'
+            ].join('\n');
+        }
+
+        function refreshOut() {
+            const data = buildExport();
+            countsEl.textContent =
+                `(${nodes.length} nodes` +
+                (plugBox ? ', box set' : ', no plug box') + ')';
+            outEl.value = JSON.stringify(data, null, 2);
+        }
+
+        function updateImageLayout() {
+            if (!img) {
+                imgLayout = null;
+                return;
+            }
+            const scale = Math.min(W / img.width, H / img.height);
+            const dw = img.width * scale;
+            const dh = img.height * scale;
+            imgLayout = { dx: (W - dw) / 2, dy: (H - dh) / 2, dw, dh };
+        }
+
+        function drawBg() {
+            bctx.clearRect(0, 0, W, H);
+            bctx.fillStyle = '#000';
+            bctx.fillRect(0, 0, W, H);
+            if (!img || !imgLayout) return;
+            bctx.save();
+            bctx.translate(-viewPanX * viewZoom, -viewPanY * viewZoom);
+            bctx.scale(viewZoom, viewZoom);
+            bctx.globalAlpha = bgOpacity;
+            bctx.drawImage(img, imgLayout.dx, imgLayout.dy, imgLayout.dw, imgLayout.dh);
+            bctx.restore();
+        }
+
+        function drawHousing() {
+            if (!showHousing || !plugBox) return;
+            const e = bodyEdges();
+            const bodyW = e.right - e.left;
+            const cableW = bodyW * CABLE_FRAC;
+            const noseW = bodyW * NOSE_FRAC;
+            const cableL = (1 - cableW) / 2;
+            const cableR = 1 - cableL;
+            const noseL = (1 - noseW) / 2;
+            const noseR = 1 - noseL;
+            const pts = [
+                [cableL, 0.00], [cableR, 0.00],
+                [cableR, BODY_TOP], [e.right, BODY_TOP],
+                [e.right, BODY_BOTTOM], [noseR, BODY_BOTTOM],
+                [noseR, NOSE_BOTTOM], [noseL, NOSE_BOTTOM],
+                [noseL, BODY_BOTTOM], [e.left, BODY_BOTTOM],
+                [e.left, BODY_TOP], [cableL, BODY_TOP]
+            ];
+            ctx.strokeStyle = 'rgba(126,200,163,0.7)';
+            ctx.lineWidth = 1.2 / viewZoom;
+            ctx.setLineDash([4 / viewZoom, 4 / viewZoom]);
+            ctx.beginPath();
+            pts.forEach(([nx, ny], i) => {
+                const p = normToWorld(nx, ny);
+                if (i === 0) ctx.moveTo(p.x, p.y);
+                else ctx.lineTo(p.x, p.y);
+            });
+            ctx.closePath();
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        function drawWing(pts, fill, stroke) {
+            if (pts.length < 2) return;
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.closePath();
+            if (fill) {
+                ctx.fillStyle = fill;
+                ctx.fill();
+            }
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 1.6 / viewZoom;
+            ctx.stroke();
+        }
+
+        function redraw() {
+            drawBg();
+            ctx.clearRect(0, 0, W, H);
+            ctx.save();
+            ctx.translate(-viewPanX * viewZoom, -viewPanY * viewZoom);
+            ctx.scale(viewZoom, viewZoom);
+
+            if (plugBox) {
+                ctx.strokeStyle = '#7ec8a3';
+                ctx.lineWidth = 1 / viewZoom;
+                ctx.strokeRect(plugBox.x, plugBox.y, plugBox.w, plugBox.h);
+                drawHousing();
+            }
+            if (boxDraft) {
+                ctx.strokeStyle = '#e0a060';
+                ctx.lineWidth = 1 / viewZoom;
+                const arm = 10 / viewZoom;
+                ctx.beginPath();
+                ctx.moveTo(boxDraft.x - arm, boxDraft.y);
+                ctx.lineTo(boxDraft.x + arm, boxDraft.y);
+                ctx.moveTo(boxDraft.x, boxDraft.y - arm);
+                ctx.lineTo(boxDraft.x, boxDraft.y + arm);
+                ctx.stroke();
+            }
+
+            drawWing(nodes, 'rgba(110,200,224,0.28)', '#6ec8e0');
+            if (hoverWorld && mode === 'node' && !dragging && nodes.length >= 2
+                && !nearestNode(hoverWorld.x, hoverWorld.y, snapRadius())) {
+                const ghost = nearestSegment(hoverWorld.x, hoverWorld.y);
+                if (ghost) {
+                    ctx.beginPath();
+                    ctx.arc(ghost.x, ghost.y, 4.5 / viewZoom, 0, Math.PI * 2);
+                    ctx.fillStyle = 'rgba(224,160,96,0.85)';
+                    ctx.fill();
+                    ctx.strokeStyle = '#e0a060';
+                    ctx.lineWidth = 1 / viewZoom;
+                    ctx.stroke();
+                }
+            }
+            if (showMirror && plugBox && nodes.length >= 2) {
+                const mirrored = nodes.map(n => {
+                    const [nx, ny] = worldToNorm(n);
+                    return normToWorld(1 - nx, ny);
+                });
+                drawWing(mirrored, 'rgba(110,200,224,0.12)', 'rgba(110,200,224,0.45)');
+            }
+
+            const r = 4 / viewZoom;
+            for (const n of nodes) {
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+                ctx.fillStyle = n.id === selectedId ? '#7ec8a3' : '#1a4a8a';
+                ctx.fill();
+                ctx.strokeStyle = n.id === selectedId ? '#c8ffe0' : '#6ec8e0';
+                ctx.lineWidth = 1 / viewZoom;
+                ctx.stroke();
+            }
+
+            ctx.restore();
+            zoomLabel.textContent = Math.round(viewZoom * 100) + '%';
+            refreshOut();
+        }
+
+        function loadImageFile(file) {
+            const url = URL.createObjectURL(file);
+            const im = new Image();
+            im.onload = () => {
+                img = im;
+                updateImageLayout();
+                viewZoom = 1;
+                viewPanX = 0;
+                viewPanY = 0;
+                setStatus(`Loaded ${file.name} (${im.width}×${im.height})`);
+                redraw();
+                URL.revokeObjectURL(url);
+            };
+            im.src = url;
+        }
+
+        async function tryPreloadImage() {
+            const paths = [
+                'references/pogo-plug.png',
+                'references/pogo-plug-side.png',
+                'pogo-plug.png'
+            ];
+            for (const path of paths) {
+                try {
+                    const res = await fetch(path, { cache: 'no-store' });
+                    if (!res.ok) continue;
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const im = new Image();
+                    await new Promise((resolve, reject) => {
+                        im.onload = resolve;
+                        im.onerror = reject;
+                        im.src = url;
+                    });
+                    img = im;
+                    updateImageLayout();
+                    setStatus(`Loaded ${path} — set the plug box, then trace the left wing`);
+                    redraw();
+                    return;
+                } catch (_) {}
+            }
+            setStatus('Load a pogo side-view photo to begin');
+        }
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const f = e.target.files && e.target.files[0];
+            if (f) loadImageFile(f);
+        });
+        document.getElementById('jsonInput').addEventListener('change', async (e) => {
+            const f = e.target.files && e.target.files[0];
+            if (!f) return;
+            if (!applyImported(await f.text())) {
+                setStatus('Could not read that file as a previous wing trace');
+            }
+        });
+
+        document.getElementById('nodeMode').onclick = () => setMode('node');
+        document.getElementById('boxMode').onclick = () => setMode('box');
+        document.getElementById('undoBtn').onclick = undo;
+        document.getElementById('deleteBtn').onclick = deleteSelected;
+        document.getElementById('clearBtn').onclick = () => {
+            if (!confirm('Clear all wing nodes?')) return;
+            pushHistory();
+            nodes = [];
+            selectedId = null;
+            nextId = 1;
+            redraw();
+        };
+        document.getElementById('exportBtn').onclick = () => {
+            const blob = new Blob([outEl.value], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'pogo-wings.json';
+            a.click();
+        };
+        document.getElementById('copySwiftBtn').onclick = async () => {
+            const swift = buildSwiftSnippet();
+            await navigator.clipboard.writeText(swift);
+            setStatus('Swift snippet copied — paste into PogoWingOutline.left');
+        };
+        document.getElementById('pasteBtn').onclick = async () => {
+            try {
+                applyImported(await navigator.clipboard.readText());
+            } catch (_) {
+                setStatus('Could not read clipboard — paste into the output box instead');
+                outEl.focus();
+            }
+        };
+        outEl.addEventListener('paste', (e) => {
+            const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
+            if (parseImported(text)) {
+                e.preventDefault();
+                applyImported(text);
+            }
+        });
+        document.getElementById('opacity').oninput = (e) => {
+            bgOpacity = Number(e.target.value) / 100;
+            redraw();
+        };
+        document.getElementById('showHousing').oninput = (e) => {
+            showHousing = e.target.checked;
+            redraw();
+        };
+        document.getElementById('showMirror').oninput = (e) => {
+            showMirror = e.target.checked;
+            redraw();
+        };
+
+        function zoomAt(sx, sy, factor) {
+            const before = screenToWorld(sx, sy);
+            viewZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, viewZoom * factor));
+            const rect = stage.getBoundingClientRect();
+            const cx = (sx - rect.left) * (W / rect.width);
+            const cy = (sy - rect.top) * (H / rect.height);
+            viewPanX = before.x - cx / viewZoom;
+            viewPanY = before.y - cy / viewZoom;
+            redraw();
+        }
+        document.getElementById('zoomInBtn').onclick = () =>
+            zoomAt(stage.getBoundingClientRect().left + 400, stage.getBoundingClientRect().top + 300, 1.25);
+        document.getElementById('zoomOutBtn').onclick = () =>
+            zoomAt(stage.getBoundingClientRect().left + 400, stage.getBoundingClientRect().top + 300, 0.8);
+        document.getElementById('zoomResetBtn').onclick = () => {
+            viewZoom = 1;
+            viewPanX = 0;
+            viewPanY = 0;
+            redraw();
+        };
+
+        stage.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+        }, { passive: false });
+
+        stage.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const w = screenToWorld(e.clientX, e.clientY);
+            const n = nearestNode(w.x, w.y, snapRadius() * 1.5);
+            if (n) {
+                selectedId = n.id;
+                deleteSelected();
+            }
+        });
+
+        stage.addEventListener('pointerdown', (e) => {
+            if (spaceDown || e.button === 1) {
+                panning = true;
+                didPan = false;
+                panLast = { x: e.clientX, y: e.clientY };
+                stage.classList.add('panning');
+                stage.setPointerCapture(e.pointerId);
+                return;
+            }
+            if (e.button !== 0 || mode !== 'node') return;
+            const w = screenToWorld(e.clientX, e.clientY);
+            const n = nearestNode(w.x, w.y, snapRadius() * 1.4);
+            if (n) {
+                dragging = { id: n.id };
+                didDrag = false;
+                selectedId = n.id;
+                stage.setPointerCapture(e.pointerId);
+                redraw();
+            }
+        });
+
+        stage.addEventListener('pointermove', (e) => {
+            hoverWorld = screenToWorld(e.clientX, e.clientY);
+            if (panning && panLast) {
+                const dx = (e.clientX - panLast.x) * (W / stage.getBoundingClientRect().width);
+                const dy = (e.clientY - panLast.y) * (H / stage.getBoundingClientRect().height);
+                if (Math.hypot(dx, dy) > 1) didPan = true;
+                viewPanX -= dx / viewZoom;
+                viewPanY -= dy / viewZoom;
+                panLast = { x: e.clientX, y: e.clientY };
+                redraw();
+                return;
+            }
+            if (!dragging) {
+                redraw();
+                return;
+            }
+            const w = screenToWorld(e.clientX, e.clientY);
+            const n = findNode(dragging.id);
+            if (!n) return;
+            if (!didDrag) pushHistory();
+            didDrag = true;
+            n.x = Math.round(w.x * 10) / 10;
+            n.y = Math.round(w.y * 10) / 10;
+            redraw();
+        });
+
+        stage.addEventListener('pointerleave', () => {
+            hoverWorld = null;
+            redraw();
+        });
+
+        stage.addEventListener('pointerup', (e) => {
+            if (panning) {
+                panning = false;
+                panLast = null;
+                stage.classList.remove('panning');
+                if (didPan) return;
+            }
+            if (dragging) {
+                const wasDrag = didDrag;
+                dragging = null;
+                didDrag = false;
+                if (wasDrag) {
+                    setStatus('Moved node');
+                    return;
+                }
+            }
+            if (e.button !== 0 || spaceDown) return;
+            const w = screenToWorld(e.clientX, e.clientY);
+            if (mode === 'box') {
+                if (!boxDraft) {
+                    pushHistory();
+                    boxDraft = { x: Math.round(w.x * 10) / 10, y: Math.round(w.y * 10) / 10 };
+                    setStatus('Now click the bottom-right corner of the plug');
+                    redraw();
+                    return;
+                }
+                pushHistory();
+                const x = Math.min(boxDraft.x, w.x);
+                const y = Math.min(boxDraft.y, w.y);
+                const bw = Math.abs(w.x - boxDraft.x);
+                const bh = Math.abs(w.y - boxDraft.y);
+                if (bw < 8 || bh < 8) {
+                    setStatus('Plug box too small — try again');
+                    boxDraft = null;
+                    redraw();
+                    return;
+                }
+                plugBox = {
+                    x: Math.round(x * 10) / 10,
+                    y: Math.round(y * 10) / 10,
+                    w: Math.round(bw * 10) / 10,
+                    h: Math.round(bh * 10) / 10
+                };
+                boxDraft = null;
+                setStatus(`Plug box ${plugBox.w}×${plugBox.h} — trace the left wing`);
+                setMode('node');
+                redraw();
+                return;
+            }
+            if (mode === 'node') {
+                addNode(w.x, w.y);
+                redraw();
+            }
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === ' ' && !e.repeat) {
+                spaceDown = true;
+                e.preventDefault();
+            }
+            if (e.key === 'z' || e.key === 'Z') { undo(); e.preventDefault(); }
+            if (e.key === 'n' || e.key === 'N') setMode('node');
+            if (e.key === 'b' || e.key === 'B') setMode('box');
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                deleteSelected();
+                e.preventDefault();
+            }
+            if (e.key === '=' || e.key === '+') {
+                zoomAt(stage.getBoundingClientRect().left + 400, stage.getBoundingClientRect().top + 300, 1.25);
+            }
+            if (e.key === '-' || e.key === '_') {
+                zoomAt(stage.getBoundingClientRect().left + 400, stage.getBoundingClientRect().top + 300, 0.8);
+            }
+            if (e.key === '0') {
+                viewZoom = 1; viewPanX = 0; viewPanY = 0; redraw();
+            }
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.key === ' ') spaceDown = false;
+        });
+
+        tryPreloadImage();
+        redraw();
+    </script>
+</body>
+</html>
