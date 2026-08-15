@@ -124,8 +124,8 @@ struct ContentView: View {
         switch store.wizard.step {
         case .cable:
             CableDiagram()
-            wrappingText("Open the battery door and seat the pogo cable. It is keyed: the wider wing goes right.")
-            wrappingText("Plug USB-C into this Mac. Do not use this cable on an HP 15C Limited Edition or a pre-2015 12C.")
+            wrappingText("Open the battery door and seat the pogo cable. The connector is keyed; the pogo plug can only be inserted one way.")
+            wrappingText("Plug USB-A/C into this Mac. Do not use this cable on an HP 15C Limited Edition or a pre-2015 12C.")
                 .foregroundStyle(.secondary)
         case .programmingMode:
             ProgrammingModeDiagram()

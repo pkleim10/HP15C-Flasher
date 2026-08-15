@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct CalculatorDisplay: View {
@@ -62,33 +63,344 @@ private enum Step1Layout {
     static var padCenterSpacingFracOfBody: CGFloat {
         padClusterWidthFrac / 2
     }
+
+    static func bayRect(in size: CGSize) -> CGRect {
+        CGRect(
+            x: size.width * 0.035,
+            y: size.height * 0.05,
+            width: size.width * bayWidthFrac,
+            height: size.height * bayHeightFrac
+        )
+    }
+
+    static func wellRect(in size: CGSize) -> CGRect {
+        let bay = bayRect(in: size)
+        let wellW = bay.width * wellWidthFrac
+        let wellH = bay.height * wellHeightFrac
+        return CGRect(
+            x: bay.midX - wellW / 2,
+            y: bay.maxY - wellH - bay.height * 0.055,
+            width: wellW,
+            height: wellH
+        )
+    }
+
+    static func leftKeyRect(in size: CGSize) -> CGRect {
+        let well = wellRect(in: size)
+        let narrowKeyW = well.height * 0.16
+        let keyH = well.height * 0.70
+        return CGRect(
+            x: well.minX - narrowKeyW,
+            y: well.midY - keyH / 2,
+            width: narrowKeyW,
+            height: keyH
+        )
+    }
+
+    static func rightKeyRects(in size: CGSize) -> (outer: CGRect, inner: CGRect) {
+        let well = wellRect(in: size)
+        let wellH = well.height
+        let innerW = wellH * 0.1804
+        let padTop = wellH * 0.155
+        let padRight = wellH * 0.080
+        let padBottom = wellH * 0.182
+        let innerTop = well.midY - wellH * 0.266
+        let innerH = well.maxY - padBottom * 1.5 - innerTop
+        let inner = CGRect(x: well.maxX, y: innerTop, width: innerW, height: innerH)
+        let outer = CGRect(
+            x: well.maxX,
+            y: inner.minY - padTop,
+            width: innerW + padRight,
+            height: well.maxY - (inner.minY - padTop)
+        )
+        return (outer, inner)
+    }
 }
 
 struct CableDiagram: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        HStack(alignment: .center, spacing: 22) {
-            VStack(spacing: 8) {
+        let bay = Step1Layout.bayCanvasSize
+        let well = Step1Layout.wellRect(in: bay)
+        let leftKey = Step1Layout.leftKeyRect(in: bay)
+        let rightKey = Step1Layout.rightKeyRects(in: bay).outer
+        let keySpan = rightKey.maxX - leftKey.minX
+        let keyMid = (leftKey.minX + rightKey.maxX) / 2
+        let plugSize = PogoPlugDrawing.sizeMatching(wingSpan: keySpan)
+        let pinTipY = plugSize.height * PogoPlugDrawing.pinTipYFrac
+        let gap: CGFloat = 3
+        let plugTopInBay = well.minY - gap - pinTipY
+        let cableStartInBay = CGPoint(
+            x: keyMid,
+            y: plugTopInBay + plugSize.height * PogoPlugDrawing.cableTopYFrac
+        )
+        let rise: CGFloat = 34
+        let bend: CGFloat = 16
+        let usbSize = CGSize(width: 58, height: 24)
+        let laptopSize = CGSize(width: 196, height: 138)
+        let extraRight: CGFloat = 14 + usbSize.width + 10 + laptopSize.width + 8
+        let laptopAboveRun = laptopSize.height * 0.62
+        let extraTop = max(8, 8 + rise + laptopAboveRun - cableStartInBay.y)
+        let cableStart = CGPoint(x: cableStartInBay.x, y: extraTop + cableStartInBay.y)
+        let runY = cableStart.y - rise
+        let usbRect = CGRect(
+            x: bay.width + 10,
+            y: runY - usbSize.height / 2,
+            width: usbSize.width,
+            height: usbSize.height
+        )
+        let laptopRect = CGRect(
+            x: usbRect.maxX + 8,
+            y: usbRect.midY - laptopAboveRun,
+            width: laptopSize.width,
+            height: laptopSize.height
+        )
+        let canvas = CGSize(
+            width: bay.width + extraRight,
+            height: max(extraTop + bay.height, laptopRect.maxY + 8, usbRect.maxY + 22)
+        )
+        let fill = colorScheme == .dark ? Color(white: 0.72) : Color(white: 0.28)
+        let metal = colorScheme == .dark ? Color(white: 0.82) : Color(white: 0.55)
+        let cordWidth = PogoPlugDrawing.cableNeckWidth(for: plugSize) * 0.45
+
+        VStack(spacing: 8) {
+            ZStack(alignment: .topLeading) {
                 BatteryBayDrawing()
-                    .aspectRatio(Step1Layout.bayAspect, contentMode: .fit)
-                    .frame(maxWidth: Step1Layout.bayMaxWidth, maxHeight: Step1Layout.bayMaxHeight)
-                Text("Pogo connector · narrow key left, wide key right")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
-            VStack(spacing: 8) {
-                let plugSize = PogoPlugDrawing.sizeMatching(connectorBodyWidth: Step1Layout.connectorBodyWidth)
+                    .frame(width: bay.width, height: bay.height)
+                    .offset(y: extraTop)
                 PogoPlugDrawing()
                     .frame(width: plugSize.width, height: plugSize.height)
-                Text("Pogo plug")
-                    .font(.caption2)
+                    .offset(x: keyMid - plugSize.width / 2, y: extraTop + plugTopInBay)
+                Canvas { context, _ in
+                    let start = CGPoint(x: cableStart.x, y: cableStart.y + 4)
+                    let upEnd = CGPoint(x: cableStart.x, y: runY + bend)
+                    let afterBend = CGPoint(x: cableStart.x + bend, y: runY)
+                    let usbEntry = CGPoint(x: usbRect.minX + 2, y: usbRect.midY)
+                    let midX = (afterBend.x + usbEntry.x) / 2
+                    let breakGap: CGFloat = 18
+                    let leftEnd = CGPoint(x: midX - breakGap / 2, y: runY)
+                    let rightEnd = CGPoint(x: midX + breakGap / 2, y: runY)
+                    var riser = Path()
+                    riser.move(to: start)
+                    riser.addLine(to: upEnd)
+                    riser.addQuadCurve(to: afterBend, control: CGPoint(x: cableStart.x, y: runY))
+                    context.stroke(
+                        riser,
+                        with: .color(fill),
+                        style: StrokeStyle(lineWidth: cordWidth, lineCap: .butt, lineJoin: .round)
+                    )
+                    fillHorizontalCord(
+                        fromX: afterBend.x,
+                        toX: leftEnd.x,
+                        y: runY,
+                        width: cordWidth,
+                        leftDiagonal: false,
+                        rightDiagonal: true,
+                        color: fill,
+                        context: &context
+                    )
+                    fillHorizontalCord(
+                        fromX: rightEnd.x,
+                        toX: usbEntry.x,
+                        y: runY,
+                        width: cordWidth,
+                        leftDiagonal: true,
+                        rightDiagonal: false,
+                        color: fill,
+                        context: &context
+                    )
+                    drawCordBreak(at: CGPoint(x: midX, y: runY), cordWidth: cordWidth, color: fill, context: &context)
+                    drawUSBA(in: usbRect, fill: fill, metal: metal, context: &context)
+                    drawLaptop(in: laptopRect, ink: Color.primary.opacity(0.78), context: &context)
+                }
+                .frame(width: canvas.width, height: canvas.height)
+                Text("USB-A/C")
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
+                    .position(x: usbRect.midX, y: usbRect.maxY + 12)
             }
+            .frame(width: canvas.width, height: canvas.height)
+            Text("Seat the pogo plug · keyed, one way only")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .accessibilityLabel("Battery bay with two coin cells and keyed pogo connector. Pogo plug shown to the right, pins down.")
+        .accessibilityLabel("Battery bay with two coin cells. Pogo plug sits just above the keyed connector and can only be inserted one way. A cord leaves the top of the plug, bends right, and ends in a USB-A/C connector next to a laptop.")
+    }
+
+    /// Slope (Δy/Δx) of the omitted-length slashes and matching cord cuts.
+    private static let cordBreakSlope: CGFloat = 0.55 / 0.38
+
+    /// Horizontal cord as a filled strip; diagonal ends are parallel to the break marks.
+    private func fillHorizontalCord(
+        fromX: CGFloat,
+        toX: CGFloat,
+        y: CGFloat,
+        width: CGFloat,
+        leftDiagonal: Bool,
+        rightDiagonal: Bool,
+        color: Color,
+        context: inout GraphicsContext
+    ) {
+        let half = width / 2
+        let inset = half / Self.cordBreakSlope
+        let leftTop = CGPoint(x: fromX - (leftDiagonal ? inset : 0), y: y - half)
+        let leftBot = CGPoint(x: fromX + (leftDiagonal ? inset : 0), y: y + half)
+        let rightTop = CGPoint(x: toX - (rightDiagonal ? inset : 0), y: y - half)
+        let rightBot = CGPoint(x: toX + (rightDiagonal ? inset : 0), y: y + half)
+        var path = Path()
+        path.move(to: leftTop)
+        path.addLine(to: rightTop)
+        path.addLine(to: rightBot)
+        path.addLine(to: leftBot)
+        path.closeSubpath()
+        context.fill(path, with: .color(color))
+    }
+
+    /// Standard omitted-length mark: two short diagonal slashes across a gap in the cord.
+    private func drawCordBreak(at center: CGPoint, cordWidth: CGFloat, color: Color, context: inout GraphicsContext) {
+        let slash: CGFloat = max(9, cordWidth * 2.4)
+        let dx: CGFloat = slash * 0.38
+        let dy: CGFloat = dx * Self.cordBreakSlope
+        let spacing: CGFloat = 8
+        let mark = StrokeStyle(lineWidth: max(0.7, cordWidth * 0.22), lineCap: .butt)
+        for offset in [-spacing / 2, spacing / 2] {
+            var slashPath = Path()
+            slashPath.move(to: CGPoint(x: center.x + offset - dx, y: center.y - dy))
+            slashPath.addLine(to: CGPoint(x: center.x + offset + dx, y: center.y + dy))
+            context.stroke(slashPath, with: .color(color), style: mark)
+        }
+    }
+
+    private func drawUSBA(in rect: CGRect, fill: Color, metal: Color, context: inout GraphicsContext) {
+        let strain = CGRect(
+            x: rect.minX,
+            y: rect.minY + rect.height * 0.16,
+            width: rect.width * 0.24,
+            height: rect.height * 0.68
+        )
+        let shell = CGRect(
+            x: strain.maxX - 3,
+            y: rect.minY,
+            width: rect.maxX - (strain.maxX - 3),
+            height: rect.height
+        )
+        context.fill(Path(roundedRect: strain, cornerRadius: 3), with: .color(fill))
+        context.fill(Path(roundedRect: shell, cornerRadius: 2.4), with: .color(metal))
+        var lip = Path()
+        lip.move(to: CGPoint(x: shell.maxX - 1, y: shell.minY + 2))
+        lip.addLine(to: CGPoint(x: shell.maxX - 1, y: shell.maxY - 2))
+        context.stroke(lip, with: .color(fill.opacity(0.35)), lineWidth: 1)
+        let mark = shell.insetBy(dx: shell.width * 0.14, dy: shell.height * 0.16)
+        drawUSBTrident(in: mark, color: Color.primary.opacity(0.82), context: &context)
+    }
+
+    /// USB trident (circle base, arrow / circle / square), pointing toward the plug tip.
+    private func drawUSBTrident(in rect: CGRect, color: Color, context: inout GraphicsContext) {
+        let s = min(rect.width, rect.height * 1.15)
+        let origin = CGPoint(x: rect.midX - s * 0.42, y: rect.midY)
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: origin.x + x * s, y: origin.y + y * s)
+        }
+        let lw = max(1.05, s / 14)
+        let stroke = StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round)
+        let hub = pt(0.38, 0)
+        var arms = Path()
+        arms.move(to: pt(0.10, 0))
+        arms.addLine(to: hub)
+        arms.addLine(to: pt(0.78, 0))
+        arms.move(to: hub)
+        arms.addLine(to: pt(0.68, -0.34))
+        arms.move(to: hub)
+        arms.addLine(to: pt(0.68, 0.34))
+        context.stroke(arms, with: .color(color), style: stroke)
+
+        let baseR = s * 0.075
+        context.fill(Path(ellipseIn: CGRect(x: pt(0.10, 0).x - baseR, y: pt(0.10, 0).y - baseR, width: baseR * 2, height: baseR * 2)), with: .color(color))
+
+        let tip = pt(0.88, 0)
+        var arrow = Path()
+        arrow.move(to: CGPoint(x: tip.x - s * 0.14, y: tip.y - s * 0.11))
+        arrow.addLine(to: tip)
+        arrow.addLine(to: CGPoint(x: tip.x - s * 0.14, y: tip.y + s * 0.11))
+        arrow.closeSubpath()
+        context.fill(arrow, with: .color(color))
+
+        let circR = s * 0.07
+        let circ = pt(0.68, -0.34)
+        context.stroke(
+            Path(ellipseIn: CGRect(x: circ.x - circR, y: circ.y - circR, width: circR * 2, height: circR * 2)),
+            with: .color(color),
+            style: stroke
+        )
+
+        let sq = s * 0.11
+        let square = pt(0.68, 0.34)
+        context.stroke(
+            Path(CGRect(x: square.x - sq / 2, y: square.y - sq / 2, width: sq, height: sq)),
+            with: .color(color),
+            style: stroke
+        )
+    }
+
+    private func drawLaptop(in rect: CGRect, ink: Color, context: inout GraphicsContext) {
+        let lw = max(1.15, rect.width / 48)
+        let line = StrokeStyle(lineWidth: lw, lineCap: .round, lineJoin: .round)
+        let baseH = rect.height * 0.20
+        let hinge = rect.height * 0.06
+        let base = CGRect(
+            x: rect.minX,
+            y: rect.maxY - baseH,
+            width: rect.width,
+            height: baseH
+        )
+        let screen = CGRect(
+            x: rect.minX + rect.width * 0.10,
+            y: rect.minY,
+            width: rect.width * 0.80,
+            height: rect.height - baseH - hinge
+        )
+        context.stroke(Path(roundedRect: screen, cornerRadius: 2.2), with: .color(ink), style: line)
+        let bezel = screen.insetBy(dx: screen.width * 0.07, dy: screen.height * 0.07)
+        context.fill(Path(roundedRect: bezel, cornerRadius: 1.2), with: .color(Color(white: 0.16)))
+        drawDisplayImage(named: "DisplayTop", atTopOf: bezel, maxHeightFraction: 0.28, context: &context)
+        drawDisplayImage(named: "DisplayBottom", atBottomOf: bezel, maxHeightFraction: 0.68, context: &context)
+        context.stroke(Path(roundedRect: bezel, cornerRadius: 1.2), with: .color(ink.opacity(0.7)), style: line)
+        context.stroke(Path(roundedRect: base, cornerRadius: 1.6), with: .color(ink), style: line)
+        var hingeLine = Path()
+        hingeLine.move(to: CGPoint(x: screen.minX + 2, y: screen.maxY))
+        hingeLine.addLine(to: CGPoint(x: screen.maxX - 2, y: screen.maxY))
+        context.stroke(hingeLine, with: .color(ink), style: line)
+    }
+
+    private func drawDisplayImage(
+        named name: String,
+        atTopOf bounds: CGRect,
+        maxHeightFraction: CGFloat,
+        context: inout GraphicsContext
+    ) {
+        guard let image = NSImage(named: name), image.size.width > 0 else { return }
+        let height = min(bounds.width * (image.size.height / image.size.width), bounds.height * maxHeightFraction)
+        let rect = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: height)
+        context.opacity = 0.5
+        context.draw(Image(nsImage: image), in: rect)
+        context.opacity = 1
+    }
+
+    private func drawDisplayImage(
+        named name: String,
+        atBottomOf bounds: CGRect,
+        maxHeightFraction: CGFloat,
+        context: inout GraphicsContext
+    ) {
+        guard let image = NSImage(named: name), image.size.width > 0 else { return }
+        let height = min(bounds.width * (image.size.height / image.size.width), bounds.height * maxHeightFraction)
+        let rect = CGRect(x: bounds.minX, y: bounds.maxY - height, width: bounds.width, height: height)
+        context.opacity = 0.5
+        context.draw(Image(nsImage: image), in: rect)
+        context.opacity = 1
     }
 }
 
@@ -147,6 +459,34 @@ struct PogoPlugDrawing: View {
     static func sizeMatching(connectorBodyWidth target: CGFloat) -> CGSize {
         let height = target * phi / (bodyH * 0.96 * widthBoost)
         return CGSize(width: height * aspect, height: height)
+    }
+
+    /// Outer x of the traced left wing and its mirror, as a fraction of the view width.
+    private static var wingXFracOfView: (left: CGFloat, right: CGFloat) {
+        let minX = PogoWingOutline.left.map(\.x).min() ?? 0.14
+        let left = 0.04 + minX * 0.92
+        return (left, 1 - left)
+    }
+
+    static func sizeMatching(wingSpan target: CGFloat) -> CGSize {
+        let span = wingXFracOfView
+        let width = target / (span.right - span.left)
+        return CGSize(width: width, height: width / aspect)
+    }
+
+    /// Pin tips as a fraction of the view height (from the top).
+    static var pinTipYFrac: CGFloat {
+        let nose = Step1Layout.pogoNoseBottom
+        let tipInBox = nose + (1 - nose) * 0.85
+        return 0.02 + tipInBox * 0.96
+    }
+
+    static let cableTopYFrac: CGFloat = 0.02
+
+    static func cableNeckWidth(for plugSize: CGSize) -> CGFloat {
+        let box = drawingBox(in: plugSize)
+        let bodyFrac = (bodyH * box.height / phi) / box.width * widthBoost
+        return max(4, bodyFrac * 0.39 * box.width)
     }
 
     var body: some View {
@@ -300,12 +640,7 @@ struct BatteryBayDrawing: View {
                 )
             }
 
-            let bay = CGRect(
-                x: size.width * 0.035,
-                y: size.height * 0.05,
-                width: size.width * Step1Layout.bayWidthFrac,
-                height: size.height * Step1Layout.bayHeightFrac
-            )
+            let bay = Step1Layout.bayRect(in: size)
             stroke(Path(roundedRect: bay, cornerRadius: bay.height * 0.07))
 
             let batteryR = bay.height * 0.32
@@ -335,35 +670,14 @@ struct BatteryBayDrawing: View {
             plusPath.addLine(to: CGPoint(x: plus.x, y: plus.y + plusArm))
             stroke(plusPath, width: lw * 1.7)
 
-            let wellW = bay.width * Step1Layout.wellWidthFrac
-            let wellH = bay.height * Step1Layout.wellHeightFrac
-            let well = CGRect(
-                x: bay.midX - wellW / 2,
-                y: bay.maxY - wellH - bay.height * 0.055,
-                width: wellW,
-                height: wellH
-            )
-            let narrowKeyW = wellH * 0.16
-            let keyH = wellH * 0.70
-            let keyY = well.midY - keyH / 2
-            let leftKey = CGRect(x: well.minX - narrowKeyW, y: keyY, width: narrowKeyW, height: keyH)
+            let well = Step1Layout.wellRect(in: size)
+            let leftKey = Step1Layout.leftKeyRect(in: size)
+            let keys = Step1Layout.rightKeyRects(in: size)
+            stroke(keyedWellPath(well: well, leftKey: leftKey, rightKey: keys.outer))
+            stroke(rightKeyInnerBorder(well: well, inner: keys.inner))
 
-            let innerW = wellH * 0.1804
-            let padTop = wellH * 0.155
-            let padRight = wellH * 0.080
-            let padBottom = wellH * 0.182
-            let innerTop = well.midY - wellH * 0.266
-            let innerH = well.maxY - padBottom * 1.5 - innerTop
-            let innerRect = CGRect(x: well.maxX, y: innerTop, width: innerW, height: innerH)
-            let rightKey = CGRect(
-                x: well.maxX,
-                y: innerRect.minY - padTop,
-                width: innerW + padRight,
-                height: well.maxY - (innerRect.minY - padTop)
-            )
-            stroke(keyedWellPath(well: well, leftKey: leftKey, rightKey: rightKey))
-            stroke(rightKeyInnerBorder(well: well, inner: innerRect))
-
+            let wellW = well.width
+            let wellH = well.height
             let padR = min(wellW, wellH) * Step1Layout.padRadiusFrac
             let clusterW = wellW * Step1Layout.padClusterWidthFrac
             let clusterH = wellH * 0.34
