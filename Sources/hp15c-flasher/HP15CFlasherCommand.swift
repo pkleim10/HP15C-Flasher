@@ -110,9 +110,15 @@ struct Flash: ParsableCommand {
 }
 
 enum CLIProgress {
-    static func report(_ fraction: Double) {
+    static func report(_ fraction: Double, _ phase: FlashProgressPhase) {
+        let name: String
+        switch phase {
+        case .reading: name = "Reading"
+        case .writing: name = "Writing"
+        case .verifying: name = "Verifying"
+        }
         let pct = Int((fraction * 100).rounded(.down))
-        FileHandle.standardError.write(Data("\r\(pct)%".utf8))
+        FileHandle.standardError.write(Data("\r\(name) \(pct)%".utf8))
     }
 
     static func finish() {

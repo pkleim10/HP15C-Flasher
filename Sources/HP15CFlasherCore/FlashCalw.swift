@@ -132,7 +132,7 @@ public final class FlashCalw {
         return data
     }
 
-    public func writeApplication(_ data: Data, progress: Progress? = nil) throws {
+    public func writeApplication(_ data: Data, progress: Progress? = nil, verifyProgress: Progress? = nil) throws {
         try FirmwareImage.validate(data, requireExactSize: true)
         let address = FlashLayout.applicationStart
         guard FlashLayout.isSafeApplicationRange(address: address, length: UInt32(data.count)) else {
@@ -176,16 +176,19 @@ public final class FlashCalw {
             try waitReady()
             try checkStatus()
 
-            progress?(Double(index + 1) / Double(pageCount) * 0.85)
+            progress?(Double(index + 1) / Double(pageCount))
         }
+        progress?(1.0)
+        Thread.sleep(forTimeInterval: 1.0)
 
+        verifyProgress?(0)
         let readback = try readApplication { fraction in
-            progress?(0.85 + fraction * 0.15)
+            verifyProgress?(fraction)
         }
         if readback != data {
             throw FlasherError.verifyMismatch
         }
-        progress?(1.0)
+        verifyProgress?(1.0)
     }
 
     private var pagesPerRegion: Int {

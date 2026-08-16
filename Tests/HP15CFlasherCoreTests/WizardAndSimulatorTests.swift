@@ -107,6 +107,83 @@ final class VoyagerFirmwareChecksumTests: XCTestCase {
         payload.append(0x0A)
         XCTAssertEqual(VoyagerFirmwareChecksum.formatted(of: payload), "0A0Ah")
     }
+
+    func testFactoryBackupIsOKToProceed() {
+        let data = Data([0x90, 0x90])
+        let assessment = VoyagerFirmwareChecksum.backupAssessment(of: data)
+        XCTAssertEqual(assessment, .factoryOriginal(0x9090))
+        XCTAssertTrue(assessment.message.contains("safe to proceed"))
+        XCTAssertTrue(assessment.message.contains("factory installed"))
+        XCTAssertFalse(assessment.message.contains("already installed"))
+    }
+
+    func testOfficial2024BackupIsVerifiedNotAlreadyInstalled() {
+        let assessment = VoyagerFirmwareChecksum.backupAssessment(of: Data([0x0A, 0x0A]))
+        XCTAssertEqual(assessment, .official2024(0x0A0A))
+        XCTAssertTrue(assessment.message.contains("safe to proceed"))
+        XCTAssertTrue(assessment.message.contains("recognized version"))
+        XCTAssertFalse(assessment.message.contains("already installed"))
+        XCTAssertEqual(
+            VoyagerFirmwareChecksum.backupAssessment(of: Data([0xA0, 0xA0])),
+            .unrecognized(0xA0A0)
+        )
+    }
+
+    func testFirmwareFileKnownLatest() {
+        let assessment = VoyagerFirmwareChecksum.firmwareFileAssessment(
+            of: Data([0x0A, 0x0A]),
+            backup: .factoryOriginal(0x9090),
+            backupSkipped: false
+        )
+        XCTAssertEqual(assessment, .knownLatest(0x0A0A))
+        XCTAssertTrue(assessment.message.contains("latest known firmware version"))
+        XCTAssertFalse(assessment.isCaution)
+    }
+
+    func testFirmwareFileFactoryNotLatest() {
+        let assessment = VoyagerFirmwareChecksum.firmwareFileAssessment(
+            of: Data([0x90, 0x90]),
+            backup: nil,
+            backupSkipped: true
+        )
+        XCTAssertEqual(assessment, .factoryNotLatest(0x9090))
+        XCTAssertTrue(assessment.message.contains("not the latest known version"))
+        XCTAssertTrue(assessment.isCaution)
+    }
+
+    func testFirmwareFileDowngradeAndAlreadyOnCalculator() {
+        XCTAssertEqual(
+            VoyagerFirmwareChecksum.firmwareFileAssessment(
+                of: Data([0x90, 0x90]),
+                backup: .official2024(0x0A0A),
+                backupSkipped: false
+            ),
+            .downgradeToFactory(0x9090)
+        )
+        XCTAssertEqual(
+            VoyagerFirmwareChecksum.firmwareFileAssessment(
+                of: Data([0x0A, 0x0A]),
+                backup: .official2024(0x0A0A),
+                backupSkipped: false
+            ),
+            .alreadyOnCalculator(0x0A0A)
+        )
+        XCTAssertEqual(
+            VoyagerFirmwareChecksum.firmwareFileAssessment(
+                of: Data([0x01, 0x01]),
+                backup: nil,
+                backupSkipped: true
+            ),
+            .unrecognized(0x0101)
+        )
+    }
+
+    func testUnknownBackupWarns() {
+        let assessment = VoyagerFirmwareChecksum.backupAssessment(of: Data([0x01, 0x01]))
+        XCTAssertEqual(assessment, .unrecognized(0x0101))
+        XCTAssertTrue(assessment.message.contains("not a recognized firmware version"))
+        XCTAssertTrue(assessment.message.hasPrefix("Checksum 0101h."))
+    }
 }
 
 final class SimulatedCalculatorTests: XCTestCase {
@@ -120,9 +197,9 @@ final class SimulatedCalculatorTests: XCTestCase {
 
         var samples: [Double] = []
         let started = Date()
-        try FlashCalw(samba: client).writeApplication(image) { fraction in
+        try FlashCalw(samba: client).writeApplication(image, progress: { fraction in
             samples.append(fraction)
-        }
+        })
         let elapsed = Date().timeIntervalSince(started)
 
         XCTAssertGreaterThan(elapsed, 0.3)

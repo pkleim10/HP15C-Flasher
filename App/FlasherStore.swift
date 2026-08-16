@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import HP15CFlasherCore
 
 @MainActor
@@ -14,7 +15,12 @@ final class FlasherStore: ObservableObject {
     @Published var expectedChecksumLabel = "the checksum for your .bin"
     @Published var backupSkipped = false
     @Published var backupFileName: String?
+    @Published var backupAssessment: BackupChecksumAssessment?
+    @Published var firmwareAssessment: FirmwareFileAssessment?
     @Published var progress: Double?
+    @Published var progressCaption: String?
+    @Published var progressIsVerify = false
+    @Published var progressBarID = 0
     @Published var lastError: String?
     @Published var successMessage: String?
     @Published var confirmFlash = false
@@ -40,6 +46,30 @@ final class FlasherStore: ObservableObject {
 
     var chipLabel: String {
         identity?.name ?? "Not connected"
+    }
+
+    var stepBanner: (text: String, caution: Bool)? {
+        switch wizard.step {
+        case .backup:
+            if !wizard.backupResolved { return nil }
+            if backupSkipped {
+                return ("Backup skipped.", true)
+            }
+            if let assessment = backupAssessment {
+                return (assessment.message, !assessment.isRecognized)
+            }
+            return ("Backup saved.", false)
+        case .firmware:
+            guard let firmwareAssessment else { return nil }
+            return (firmwareAssessment.message, firmwareAssessment.isCaution)
+        case .flash:
+            if wizard.flashSucceeded {
+                return ("Flashed and verified.", false)
+            }
+            return nil
+        default:
+            return nil
+        }
     }
 
     func start() {
@@ -73,7 +103,7 @@ final class FlasherStore: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.title = "Choose HP 15C CE firmware"
-        panel.message = "Select a 112 KB .bin application image. This app does not download firmware."
+        panel.message = "Select a 114,688 (0x1C000) byte file with a .bin extension. This app does not download firmware."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         applyFirmware(from: url)
     }
@@ -87,11 +117,14 @@ final class FlasherStore: ObservableObject {
             firmwareDetail = "\(image.url.lastPathComponent) — \(image.byteCount) bytes, write at 0x04000, checksum \(checksum)"
             wizard.firmwareOK = true
             lastError = nil
+            refreshFirmwareAssessment(selected: image.data)
         } catch {
             firmwareURL = nil
             firmwareDetail = error.localizedDescription
             expectedChecksumLabel = "the checksum for your .bin"
             wizard.firmwareOK = false
+            firmwareAssessment = nil
+            lastError = error.localizedDescription
         }
     }
 
@@ -108,16 +141,25 @@ final class FlasherStore: ObservableObject {
     func backup(to url: URL) {
         guard let client else { return }
         backupSkipped = false
+        backupAssessment = nil
         runBusy(statusText: "Reading firmware…") {
-            try self.flasher.read(to: url, client: client) { fraction in
+            try self.flasher.read(to: url, client: client) { fraction, _ in
                 Task { @MainActor in
                     self.progress = fraction
+                    self.progressCaption = "Backing up"
+                    self.progressIsVerify = false
                 }
             }
-            return "Saved backup to \(url.lastPathComponent)"
+            return "Backup saved."
         } onSuccess: {
+            if let saved = try? Data(contentsOf: url) {
+                self.backupAssessment = VoyagerFirmwareChecksum.backupAssessment(of: saved)
+            }
             self.backupFileName = url.lastPathComponent
             self.wizard.backupResolved = true
+            if let firmwareURL = self.firmwareURL, let selected = try? Data(contentsOf: firmwareURL) {
+                self.refreshFirmwareAssessment(selected: selected)
+            }
         }
     }
 
@@ -125,7 +167,12 @@ final class FlasherStore: ObservableObject {
         confirmSkipBackup = false
         backupSkipped = true
         backupFileName = nil
+        backupAssessment = nil
         wizard.backupResolved = true
+        firmwareAssessment = nil
+        if let firmwareURL, let selected = try? Data(contentsOf: firmwareURL) {
+            refreshFirmwareAssessment(selected: selected)
+        }
     }
 
     func done() {
@@ -148,6 +195,10 @@ final class FlasherStore: ObservableObject {
             return parts.isEmpty ? "SAM-BA connected" : "Connected \(parts.joined(separator: " · "))"
         case .backup:
             if backupSkipped { return "Backup skipped" }
+            if let assessment = backupAssessment {
+                let name = backupFileName.map { "Saved \($0) · " } ?? "Saved · "
+                return name + VoyagerFirmwareChecksum.formatted(assessment.displayed)
+            }
             if let backupFileName { return "Saved backup \(backupFileName)" }
             return "Backup saved"
         case .firmware:
@@ -167,10 +218,27 @@ final class FlasherStore: ObservableObject {
     func flash() {
         guard let firmwareURL, let client else { return }
         confirmFlash = false
-        runBusy(statusText: "Writing firmware…") {
-            try self.flasher.write(firmwareURL: firmwareURL, client: client) { fraction in
+        runBusy(statusText: "Writing firmware…", caption: "Flashing") {
+            try self.flasher.write(firmwareURL: firmwareURL, client: client) { fraction, phase in
                 Task { @MainActor in
-                    self.progress = fraction
+                    switch phase {
+                    case .writing:
+                        self.progress = min(1, fraction)
+                        self.progressCaption = "Flashing"
+                        self.progressIsVerify = false
+                        self.status = "Writing firmware…"
+                    case .verifying:
+                        if !self.progressIsVerify {
+                            self.progress = nil
+                            self.progressBarID += 1
+                            self.progressCaption = "Verifying"
+                            self.progressIsVerify = true
+                            self.status = "Verifying firmware…"
+                        }
+                        self.progress = fraction
+                    case .reading:
+                        break
+                    }
                 }
             }
             return "Flashed and verified."
@@ -201,8 +269,17 @@ final class FlasherStore: ObservableObject {
     }
     #endif
 
+    private func refreshFirmwareAssessment(selected: Data) {
+        firmwareAssessment = VoyagerFirmwareChecksum.firmwareFileAssessment(
+            of: selected,
+            backup: backupAssessment,
+            backupSkipped: backupSkipped
+        )
+    }
+
     private func runBusy(
         statusText: String,
+        caption: String? = "Backing up",
         work: @escaping () throws -> String,
         onSuccess: @escaping () -> Void
     ) {
@@ -210,6 +287,8 @@ final class FlasherStore: ObservableObject {
         lastError = nil
         successMessage = nil
         progress = 0
+        progressCaption = caption
+        progressIsVerify = false
         status = statusText
         Task.detached {
             do {
@@ -217,6 +296,8 @@ final class FlasherStore: ObservableObject {
                 await MainActor.run {
                     self.wizard.isBusy = false
                     self.progress = 1
+                    self.progressCaption = nil
+                    self.progressIsVerify = false
                     self.successMessage = done
                     self.status = "Connected: \(self.chipLabel)"
                     onSuccess()
@@ -225,6 +306,8 @@ final class FlasherStore: ObservableObject {
                 await MainActor.run {
                     self.wizard.isBusy = false
                     self.progress = nil
+                    self.progressCaption = nil
+                    self.progressIsVerify = false
                     self.lastError = error.localizedDescription
                     self.status = "Operation failed."
                 }

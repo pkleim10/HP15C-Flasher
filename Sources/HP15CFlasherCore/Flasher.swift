@@ -8,7 +8,13 @@ public struct FlashPlan: Equatable {
     public var byteCount: Int { image.byteCount }
 }
 
-public typealias FlashProgress = (Double) -> Void
+public enum FlashProgressPhase: Sendable {
+    case reading
+    case writing
+    case verifying
+}
+
+public typealias FlashProgress = (_ fraction: Double, _ phase: FlashProgressPhase) -> Void
 
 /// Coordinates cable detection, image checks, and SAM-BA flash I/O.
 public struct Flasher {
@@ -78,20 +84,27 @@ public struct Flasher {
         }
         try withClient(client) { samba in
             let flash = FlashCalw(samba: samba)
-            try flash.writeApplication(plan.image.data, progress: progress)
+            try flash.writeApplication(
+                plan.image.data,
+                progress: { progress?($0, .writing) },
+                verifyProgress: { progress?($0, .verifying) }
+            )
         }
     }
 
-    public func read(to fileURL: URL, client: SambaClient? = nil, progress: FlashProgress? = nil) throws {
+    @discardableResult
+    public func read(to fileURL: URL, client: SambaClient? = nil, progress: FlashProgress? = nil) throws -> Data {
+        var saved = Data()
         try withClient(client) { samba in
             let flash = FlashCalw(samba: samba)
             let identity = try flash.identify()
             guard identity.isSupported15C else {
                 throw FlasherError.unsupportedDevice(name: identity.name, cidr: identity.cidr, exid: identity.exid)
             }
-            let data = try flash.readApplication(progress: progress)
-            try data.write(to: fileURL)
+            saved = try flash.readApplication { progress?($0, .reading) }
+            try saved.write(to: fileURL)
         }
+        return saved
     }
 
     private func withClient(_ existing: SambaClient?, body: (SambaClient) throws -> Void) throws {

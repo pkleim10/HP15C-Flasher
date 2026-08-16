@@ -3,6 +3,7 @@ import HP15CFlasherCore
 
 struct ContentView: View {
     @EnvironmentObject private var store: FlasherStore
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         wizardColumn
@@ -41,12 +42,16 @@ struct ContentView: View {
             stepBody
             stepChecklist
             if store.wizard.isBusy, let progress = store.progress {
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
+                labeledProgress(
+                    store.progressCaption ?? "Working",
+                    value: progress,
+                    tint: store.progressIsVerify ? .green : (store.progressCaption == "Flashing" ? .blue : Color.accentColor),
+                    identity: store.progressBarID
+                )
             }
-            if let success = store.successMessage {
-                Text(success)
-                    .foregroundStyle(.green)
+            if let banner = store.stepBanner {
+                wrappingText(banner.text)
+                    .foregroundStyle(banner.caution ? Color.orange : Color.green)
                     .textSelection(.enabled)
             }
             if let error = store.lastError {
@@ -124,53 +129,67 @@ struct ContentView: View {
         switch store.wizard.step {
         case .cable:
             CableDiagram()
-            wrappingText("Open the battery door and seat the pogo cable. The connector is keyed; the pogo plug can only be inserted one way.")
-            wrappingText("Plug USB-A/C into this Mac. Do not use this cable on an HP 15C Limited Edition or a pre-2015 12C.")
-                .foregroundStyle(.secondary)
+            wrappingText("Open the calculator's battery door and insert the POGO cable. The connector is keyed; the POGO can only be inserted one way. Make sure the plug snaps securely into place.")
+            wrappingText("Plug the other end of the cable (USB-A or USB-C) into this Mac.")
+            warningBox("Use the POGO cable only on the HP 15C Collector’s Edition. This app will not flash other calculators. Do not use the cable on an HP 15C Limited Edition, a pre-2015 12C, an HP 20b, or an HP 30b, as it could permanently damage your calculator.")
         case .programmingMode:
             ProgrammingModeDiagram()
-            wrappingText("Hold ERASE, press RESET, then release ERASE. The display stays off; ON is ignored.")
-            wrappingText("Continue stays off until this Mac sees SAM-BA on the cable.")
-                .foregroundStyle(.secondary)
+            wrappingText("On the cable's switch box, hold ERASE, press RESET, then release ERASE. The display stays off. The calculator's ON button is ignored in this state.")
             connectionStatus
+            wrappingText("Once your calculator is recognized, continue with the next step.")
+                .foregroundStyle(.secondary)
         case .backup:
-            wrappingText("Save a copy of the 112 KB application image before anything is erased.")
+            wrappingText("Save a copy of the currently installed firmware in case you want to restore it later.")
             HStack {
                 Button("Save Backup…", action: store.backup)
+                    .buttonStyle(.borderedProminent)
                     .disabled(!store.canBackup)
                 Button("Skip") { store.confirmSkipBackup = true }
                     .disabled(store.wizard.isBusy)
             }
-            if store.wizard.backupResolved {
-                Text(store.backupSkipped ? "Backup skipped." : "Backup saved.")
-                    .foregroundStyle(store.backupSkipped ? .orange : .green)
-            }
         case .firmware:
-            wrappingText("Choose a 112 KB .bin. This app does not download HP firmware.")
-            wrappingText(store.firmwareDetail)
-                .textSelection(.enabled)
-            Button("Choose Firmware…", action: store.chooseFirmware)
-                .disabled(store.wizard.isBusy)
+            wrappingText("Choose a 114,688 (0x1C000) byte file with .bin extension. This app does not download HP firmware.")
+            if store.wizard.firmwareOK {
+                Button("Choose Firmware…", action: store.chooseFirmware)
+                    .disabled(store.wizard.isBusy)
+            } else {
+                Button("Choose Firmware…", action: store.chooseFirmware)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(store.wizard.isBusy)
+            }
+            if store.wizard.firmwareOK, let name = store.firmwareURL?.lastPathComponent {
+                wrappingText(name)
+                    .font(.callout.monospaced())
+                    .textSelection(.enabled)
+            }
         case .flash:
             wrappingText("Write starts at address 0x04000. The SAM-BA bootloader below that address is left intact.")
-            Button("Flash Calculator") {
-                store.confirmFlash = true
+            if store.wizard.flashSucceeded {
+                Button("Flash Calculator") {
+                    store.confirmFlash = true
+                }
+                .disabled(!store.canFlash)
+            } else {
+                Button("Flash Calculator") {
+                    store.confirmFlash = true
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(!store.canFlash)
             }
-            .keyboardShortcut(.defaultAction)
-            .disabled(!store.canFlash)
             connectionStatus
         case .finish:
             FinishDiagram()
-            wrappingText("Press RESET on the cable, then turn the calculator ON. Pr Error is expected; user memory was cleared. Press any key to see 0.0000.")
+            wrappingText("Press RESET on the cable switch-box, then turn the calculator ON. “Pr Error” in the display is expected. Press any key to see 0.0000.")
         case .checksum:
             ChecksumDiagram()
-            wrappingText("Turn the calculator OFF. Hold g and ENTER, then press ON. Release ON, then release g and ENTER.")
-            wrappingText("The display shows 1.L 2.C 3.H. Press 2.")
+            wrappingText("Turn the calculator OFF (press ON button). Hold g and ENTER, then press ON. Release ON, then release g and ENTER.")
+            wrappingText("The display shows the test menu: “1.L 2.C 3.H”. Press 2.")
             HStack(alignment: .center, spacing: 8) {
                 Text("You should see")
                 CalculatorDisplay(store.expectedChecksumLabel)
             }
-            wrappingText("That value is the 8-bit checksum of the selected .bin, shown as a repeated byte. Press ON to leave the test menu.")
+            wrappingText("That value is the checksum of the installed firmware (the one you just flashed). Press ON to leave the test menu.")
                 .foregroundStyle(.secondary)
         }
     }
@@ -179,6 +198,37 @@ struct ContentView: View {
         Text(text)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func labeledProgress(_ title: String, value: Double, tint: Color? = nil, identity: Int = 0) -> some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            ProgressView(value: value)
+                .progressViewStyle(.linear)
+                .tint(tint ?? Color.accentColor)
+                .animation(nil, value: identity)
+                .id(identity)
+                .accessibilityLabel(title)
+        }
+    }
+
+    private func warningBox(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.black)
+                .accessibilityHidden(true)
+            wrappingText(text)
+                .foregroundStyle(.black)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isStaticText)
+        .accessibilityLabel("Warning. \(text)")
     }
 
     private var stepChecklist: some View {
@@ -195,8 +245,9 @@ struct ContentView: View {
         let upcoming = store.wizard.isUpcoming(step)
         let current = store.wizard.step == step
         return HStack(alignment: .top, spacing: 8) {
-            Image(systemName: complete ? "checkmark.square.fill" : "square")
-                .foregroundStyle(complete ? Color.accentColor : Color.secondary)
+            Image(systemName: complete ? "checkmark.circle.fill" : "circle")
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(complete ? Color.white : Color.secondary, complete ? Color.green : Color.secondary)
                 .font(.body)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(step.number). \(step.title)")
@@ -231,13 +282,19 @@ struct ContentView: View {
     }
 
     private var connectionStatus: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            LabeledContent("Status", value: store.status)
-            LabeledContent("Port", value: store.portPath ?? "—")
-            LabeledContent("SAM-BA", value: store.sambaVersion ?? "—")
+        let well = colorScheme == .dark ? Color(white: 0.08) : Color(white: 0.18)
+        let ink = Color(white: colorScheme == .dark ? 0.86 : 0.92)
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Status  \(store.status)")
+            Text("Port    \(store.portPath ?? "—")")
+            Text("SAM-BA  \(store.sambaVersion ?? "—")")
         }
-        .font(.callout)
+        .font(.system(size: 14, weight: .regular, design: .monospaced))
+        .foregroundStyle(ink)
         .textSelection(.enabled)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(well, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
     private var navigation: some View {

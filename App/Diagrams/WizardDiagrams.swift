@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import HP15CFlasherCore
 
 struct CalculatorDisplay: View {
     let text: String
@@ -120,6 +121,9 @@ private enum Step1Layout {
 struct CableDiagram: View {
     @Environment(\.colorScheme) private var colorScheme
 
+    /// 0 = live Step 1. Depths 0–1 draw a Flasher window on the laptop; 2+ show wallpaper only.
+    var nesting: Int = 0
+
     var body: some View {
         let bay = Step1Layout.bayCanvasSize
         let well = Step1Layout.wellRect(in: bay)
@@ -150,6 +154,15 @@ struct CableDiagram: View {
             width: usbSize.width,
             height: usbSize.height
         )
+        let afterBend = CGPoint(x: cableStart.x + bend, y: runY)
+        let usbEntry = CGPoint(x: usbRect.minX + 2, y: usbRect.midY)
+        let controllerSize = CGSize(width: 58, height: 26)
+        let controllerRect = CGRect(
+            x: (afterBend.x + usbEntry.x) / 2 - controllerSize.width / 2,
+            y: runY - controllerSize.height / 2,
+            width: controllerSize.width,
+            height: controllerSize.height
+        )
         let laptopRect = CGRect(
             x: usbRect.maxX + 8,
             y: usbRect.midY - laptopAboveRun,
@@ -158,7 +171,7 @@ struct CableDiagram: View {
         )
         let canvas = CGSize(
             width: bay.width + extraRight,
-            height: max(extraTop + bay.height, laptopRect.maxY + 8, usbRect.maxY + 22)
+            height: max(extraTop + bay.height, laptopRect.maxY + 22, usbRect.maxY + 22)
         )
         let fill = colorScheme == .dark ? Color(white: 0.72) : Color(white: 0.28)
         let metal = colorScheme == .dark ? Color(white: 0.82) : Color(white: 0.55)
@@ -175,12 +188,6 @@ struct CableDiagram: View {
                 Canvas { context, _ in
                     let start = CGPoint(x: cableStart.x, y: cableStart.y + 4)
                     let upEnd = CGPoint(x: cableStart.x, y: runY + bend)
-                    let afterBend = CGPoint(x: cableStart.x + bend, y: runY)
-                    let usbEntry = CGPoint(x: usbRect.minX + 2, y: usbRect.midY)
-                    let midX = (afterBend.x + usbEntry.x) / 2
-                    let breakGap: CGFloat = 18
-                    let leftEnd = CGPoint(x: midX - breakGap / 2, y: runY)
-                    let rightEnd = CGPoint(x: midX + breakGap / 2, y: runY)
                     var riser = Path()
                     riser.move(to: start)
                     riser.addLine(to: upEnd)
@@ -190,35 +197,61 @@ struct CableDiagram: View {
                         with: .color(fill),
                         style: StrokeStyle(lineWidth: cordWidth, lineCap: .butt, lineJoin: .round)
                     )
-                    fillHorizontalCord(
-                        fromX: afterBend.x,
-                        toX: leftEnd.x,
-                        y: runY,
-                        width: cordWidth,
-                        leftDiagonal: false,
-                        rightDiagonal: true,
-                        color: fill,
-                        context: &context
+                    var run = Path()
+                    run.move(to: afterBend)
+                    run.addLine(to: usbEntry)
+                    context.stroke(
+                        run,
+                        with: .color(fill),
+                        style: StrokeStyle(lineWidth: cordWidth, lineCap: .butt)
                     )
-                    fillHorizontalCord(
-                        fromX: rightEnd.x,
-                        toX: usbEntry.x,
-                        y: runY,
-                        width: cordWidth,
-                        leftDiagonal: true,
-                        rightDiagonal: false,
-                        color: fill,
-                        context: &context
-                    )
-                    drawCordBreak(at: CGPoint(x: midX, y: runY), cordWidth: cordWidth, color: fill, context: &context)
+                    drawController(in: controllerRect, ink: Color.primary.opacity(0.78), context: &context)
                     drawUSBA(in: usbRect, fill: fill, metal: metal, context: &context)
                     drawLaptop(in: laptopRect, ink: Color.primary.opacity(0.78), context: &context)
                 }
                 .frame(width: canvas.width, height: canvas.height)
+                let bezel = Self.laptopBezel(in: laptopRect)
+                ZStack {
+                    Image("LaptopWallpaper")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: bezel.width, height: bezel.height)
+                        .clipped()
+                        .opacity(0.45)
+                    if nesting < 2 {
+                        FitToSize {
+                            Step1ScreenMiniature(nesting: nesting + 1)
+                        }
+                        .frame(width: bezel.width * 0.86, height: bezel.height * 0.78)
+                        .shadow(color: .black.opacity(0.4), radius: 1.6, y: 0.8)
+                    }
+                }
+                .frame(width: bezel.width, height: bezel.height)
+                .clipShape(RoundedRectangle(cornerRadius: 1.2, style: .continuous))
+                .offset(x: bezel.minX, y: bezel.minY)
+                .allowsHitTesting(false)
+                Text("E")
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .position(
+                        x: controllerRect.minX + controllerRect.width * 0.32,
+                        y: controllerRect.minY + controllerRect.height * 0.30
+                    )
+                Text("R")
+                    .font(.system(size: 8, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .position(
+                        x: controllerRect.minX + controllerRect.width * 0.68,
+                        y: controllerRect.minY + controllerRect.height * 0.30
+                    )
                 Text("USB-A/C")
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
                     .position(x: usbRect.midX, y: usbRect.maxY + 12)
+                Text("This Mac")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .position(x: laptopRect.midX, y: laptopRect.maxY + 12)
             }
             .frame(width: canvas.width, height: canvas.height)
             Text("Seat the pogo plug · keyed, one way only")
@@ -227,51 +260,48 @@ struct CableDiagram: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .accessibilityLabel("Battery bay with two coin cells. Pogo plug sits just above the keyed connector and can only be inserted one way. A cord leaves the top of the plug, bends right, and ends in a USB-A/C connector next to a laptop.")
+        .accessibilityLabel("Battery bay with two coin cells. Pogo plug sits just above the keyed connector and can only be inserted one way. A cord leaves the top of the plug, bends right past an ERASE and RESET controller, and ends in a USB-A/C connector next to this Mac.")
     }
 
-    /// Slope (Δy/Δx) of the omitted-length slashes and matching cord cuts.
-    private static let cordBreakSlope: CGFloat = 0.55 / 0.38
+    private func drawController(in rect: CGRect, ink: Color, context: inout GraphicsContext) {
+        context.fill(Path(ellipseIn: rect), with: .color(Color(white: 0.12)))
+        context.stroke(
+            Path(ellipseIn: rect),
+            with: .color(ink.opacity(0.8)),
+            style: StrokeStyle(lineWidth: max(1.0, rect.height / 16), lineJoin: .round)
+        )
+        let diameter = rect.height * 0.36
+        let buttonY = rect.minY + rect.height * 0.66
+        drawControllerButton(
+            at: CGPoint(x: rect.minX + rect.width * 0.32, y: buttonY),
+            diameter: diameter,
+            fill: .black,
+            ink: ink,
+            context: &context
+        )
+        drawControllerButton(
+            at: CGPoint(x: rect.minX + rect.width * 0.68, y: buttonY),
+            diameter: diameter,
+            fill: Color(white: 0.92),
+            ink: ink,
+            context: &context
+        )
+    }
 
-    /// Horizontal cord as a filled strip; diagonal ends are parallel to the break marks.
-    private func fillHorizontalCord(
-        fromX: CGFloat,
-        toX: CGFloat,
-        y: CGFloat,
-        width: CGFloat,
-        leftDiagonal: Bool,
-        rightDiagonal: Bool,
-        color: Color,
+    private func drawControllerButton(
+        at center: CGPoint,
+        diameter: CGFloat,
+        fill: Color,
+        ink: Color,
         context: inout GraphicsContext
     ) {
-        let half = width / 2
-        let inset = half / Self.cordBreakSlope
-        let leftTop = CGPoint(x: fromX - (leftDiagonal ? inset : 0), y: y - half)
-        let leftBot = CGPoint(x: fromX + (leftDiagonal ? inset : 0), y: y + half)
-        let rightTop = CGPoint(x: toX - (rightDiagonal ? inset : 0), y: y - half)
-        let rightBot = CGPoint(x: toX + (rightDiagonal ? inset : 0), y: y + half)
-        var path = Path()
-        path.move(to: leftTop)
-        path.addLine(to: rightTop)
-        path.addLine(to: rightBot)
-        path.addLine(to: leftBot)
-        path.closeSubpath()
-        context.fill(path, with: .color(color))
-    }
-
-    /// Standard omitted-length mark: two short diagonal slashes across a gap in the cord.
-    private func drawCordBreak(at center: CGPoint, cordWidth: CGFloat, color: Color, context: inout GraphicsContext) {
-        let slash: CGFloat = max(9, cordWidth * 2.4)
-        let dx: CGFloat = slash * 0.38
-        let dy: CGFloat = dx * Self.cordBreakSlope
-        let spacing: CGFloat = 8
-        let mark = StrokeStyle(lineWidth: max(0.7, cordWidth * 0.22), lineCap: .butt)
-        for offset in [-spacing / 2, spacing / 2] {
-            var slashPath = Path()
-            slashPath.move(to: CGPoint(x: center.x + offset - dx, y: center.y - dy))
-            slashPath.addLine(to: CGPoint(x: center.x + offset + dx, y: center.y + dy))
-            context.stroke(slashPath, with: .color(color), style: mark)
-        }
+        let r = CGRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
+        context.fill(Path(ellipseIn: r), with: .color(fill))
+        context.stroke(
+            Path(ellipseIn: r),
+            with: .color(ink.opacity(0.5)),
+            style: StrokeStyle(lineWidth: 0.7)
+        )
     }
 
     private func drawUSBA(in rect: CGRect, fill: Color, metal: Color, context: inout GraphicsContext) {
@@ -365,8 +395,6 @@ struct CableDiagram: View {
         context.stroke(Path(roundedRect: screen, cornerRadius: 2.2), with: .color(ink), style: line)
         let bezel = screen.insetBy(dx: screen.width * 0.07, dy: screen.height * 0.07)
         context.fill(Path(roundedRect: bezel, cornerRadius: 1.2), with: .color(Color(white: 0.16)))
-        drawDisplayImage(named: "DisplayTop", atTopOf: bezel, maxHeightFraction: 0.28, context: &context)
-        drawDisplayImage(named: "DisplayBottom", atBottomOf: bezel, maxHeightFraction: 0.68, context: &context)
         context.stroke(Path(roundedRect: bezel, cornerRadius: 1.2), with: .color(ink.opacity(0.7)), style: line)
         context.stroke(Path(roundedRect: base, cornerRadius: 1.6), with: .color(ink), style: line)
         var hingeLine = Path()
@@ -375,32 +403,120 @@ struct CableDiagram: View {
         context.stroke(hingeLine, with: .color(ink), style: line)
     }
 
-    private func drawDisplayImage(
-        named name: String,
-        atTopOf bounds: CGRect,
-        maxHeightFraction: CGFloat,
-        context: inout GraphicsContext
-    ) {
-        guard let image = NSImage(named: name), image.size.width > 0 else { return }
-        let height = min(bounds.width * (image.size.height / image.size.width), bounds.height * maxHeightFraction)
-        let rect = CGRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: height)
-        context.opacity = 0.5
-        context.draw(Image(nsImage: image), in: rect)
-        context.opacity = 1
+    static func laptopBezel(in rect: CGRect) -> CGRect {
+        let baseH = rect.height * 0.20
+        let hinge = rect.height * 0.06
+        let screen = CGRect(
+            x: rect.minX + rect.width * 0.10,
+            y: rect.minY,
+            width: rect.width * 0.80,
+            height: rect.height - baseH - hinge
+        )
+        return screen.insetBy(dx: screen.width * 0.07, dy: screen.height * 0.07)
     }
+}
 
-    private func drawDisplayImage(
-        named name: String,
-        atBottomOf bounds: CGRect,
-        maxHeightFraction: CGFloat,
-        context: inout GraphicsContext
-    ) {
-        guard let image = NSImage(named: name), image.size.width > 0 else { return }
-        let height = min(bounds.width * (image.size.height / image.size.width), bounds.height * maxHeightFraction)
-        let rect = CGRect(x: bounds.minX, y: bounds.maxY - height, width: bounds.width, height: height)
-        context.opacity = 0.5
-        context.draw(Image(nsImage: image), in: rect)
-        context.opacity = 1
+/// Live Step 1 window content, scaled to fit the laptop screen.
+private struct Step1ScreenMiniature: View {
+    var nesting: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("HP 15C Flasher")
+                    .font(.largeTitle.weight(.semibold))
+                Text("Native SAM-BA programmer for the Collector’s Edition")
+                    .foregroundStyle(.secondary)
+            }
+            HStack {
+                Text("Step 1 of \(WizardStep.count)")
+                    .font(.headline)
+                Text(WizardStep.cable.title)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    CableDiagram(nesting: nesting)
+                    Text("Open the calculator's battery door and insert the POGO cable. The connector is keyed; the POGO can only be inserted one way. Make sure the plug snaps securely into place.")
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Plug the other end of the cable (USB-A or USB-C) into this Mac.")
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(WizardStep.allCases, id: \.self) { step in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "circle")
+                            .foregroundStyle(.secondary)
+                        Text("\(step.number). \(step.title)")
+                            .fontWeight(step == .cable ? .semibold : .regular)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(step == .cable ? Color.primary : Color.secondary)
+                    .opacity(step == .cable ? 1 : 0.45)
+                }
+            }
+            .padding(.top, 4)
+            HStack {
+                Text("Back")
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("Continue")
+                    .fontWeight(.medium)
+            }
+            Text("\(Bundle.main.miniatureVersionLabel) · Mach II Labs · offline · no telemetry · firmware files stay on this Mac")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(24)
+        .frame(width: 640, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct MiniatureSizeKey: PreferenceKey {
+    static var defaultValue = CGSize.zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        if next.width > 0, next.height > 0 { value = next }
+    }
+}
+
+/// Uniformly scales content to fit the proposed size without clipping.
+private struct FitToSize<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+    @State private var intrinsic = CGSize(width: 640, height: 900)
+
+    var body: some View {
+        GeometryReader { geo in
+            let scale = min(
+                geo.size.width / max(intrinsic.width, 1),
+                geo.size.height / max(intrinsic.height, 1)
+            ) * 0.92
+            content()
+                .fixedSize(horizontal: false, vertical: true)
+                .background(
+                    GeometryReader { inner in
+                        Color.clear.preference(key: MiniatureSizeKey.self, value: inner.size)
+                    }
+                )
+                .onPreferenceChange(MiniatureSizeKey.self) { size in
+                    if size.width > 0, size.height > 0 { intrinsic = size }
+                }
+                .scaleEffect(scale, anchor: .top)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+        }
+    }
+}
+
+private extension Bundle {
+    var miniatureVersionLabel: String {
+        let marketing = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(marketing) (\(build))"
     }
 }
 
@@ -750,28 +866,59 @@ struct BatteryBayDrawing: View {
 struct ProgrammingModeDiagram: View {
     var body: some View {
         HStack(spacing: 20) {
-            buttonCallout("1. Hold ERASE", systemImage: "e.square.fill")
+            callout("1. Hold ERASE", fill: .black, motion: .hold)
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
-            buttonCallout("2. Press RESET", systemImage: "r.square.fill")
+            callout("2. Press RESET", fill: Color(white: 0.92), motion: .tap)
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
-            buttonCallout("3. Release ERASE", systemImage: "e.square")
+            callout("3. Release ERASE", fill: .black, motion: .release)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .accessibilityLabel("Hold ERASE, press RESET, then release ERASE")
+        .accessibilityLabel("On the cable's switch box, hold ERASE, press RESET, then release ERASE")
     }
 
-    private func buttonCallout(_ title: String, systemImage: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
+    private enum Motion {
+        case hold, tap, release
+    }
+
+    private func callout(_ title: String, fill: Color, motion: Motion) -> some View {
+        VStack(spacing: 8) {
+            VStack(spacing: 5) {
+                motionArrows(motion)
+                Circle()
+                    .fill(fill)
+                    .overlay {
+                        Circle().stroke(Color.secondary, lineWidth: 1.25)
+                    }
+                    .frame(width: 22, height: 22)
+            }
             Text(title)
                 .font(.caption)
                 .multilineTextAlignment(.center)
                 .frame(width: 90)
+        }
+    }
+
+    @ViewBuilder
+    private func motionArrows(_ motion: Motion) -> some View {
+        switch motion {
+        case .hold:
+            Image(systemName: "arrow.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+        case .tap:
+            HStack(spacing: 3) {
+                Image(systemName: "arrow.down")
+                Image(systemName: "arrow.up")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+        case .release:
+            Image(systemName: "arrow.up")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -780,65 +927,264 @@ struct FinishDiagram: View {
     var body: some View {
         HStack(spacing: 28) {
             VStack(spacing: 6) {
-                Image(systemName: "r.square.fill")
-                    .font(.title)
-                    .foregroundStyle(Color.accentColor)
+                VStack(spacing: 5) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.down")
+                        Image(systemName: "arrow.up")
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    Circle()
+                        .fill(Color(white: 0.92))
+                        .overlay {
+                            Circle().stroke(Color.secondary, lineWidth: 1.25)
+                        }
+                        .frame(width: 22, height: 22)
+                }
                 Text("Press RESET")
                     .font(.caption)
             }
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
-            VStack(spacing: 6) {
-                Image(systemName: "power")
-                    .font(.title)
-                    .foregroundStyle(Color.accentColor)
-                Text("Then ON")
-                    .font(.caption)
-            }
+            CalculatorOnKey()
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
-            VStack(spacing: 6) {
-                CalculatorDisplay("Pr Error")
-                Text("Expected")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+            CalculatorDisplay("Pr Error")
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .accessibilityLabel("Press RESET on the cable, then ON. Pr Error is expected")
+        .accessibilityLabel("Press RESET on the cable switch-box, then turn the calculator ON. Pr Error in the display is expected")
     }
 }
 
 struct ChecksumDiagram: View {
     var body: some View {
-        HStack(spacing: 16) {
-            buttonCallout("1. Hold g + ENTER", systemImage: "g.square.fill")
+        HStack(spacing: 8) {
+            VStack(spacing: 6) {
+                VStack(spacing: 5) {
+                    KeystrokeArrows(motion: .press)
+                    CalculatorOnKey()
+                }
+                Text("1. Turn OFF")
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+            }
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
-            buttonCallout("2. Press ON", systemImage: "power")
+            gEnterBeat(number: "2", title: "Hold g + ENTER", motion: .hold)
+            Image(systemName: "arrow.right")
+                .foregroundStyle(.secondary)
+            VStack(spacing: 6) {
+                VStack(spacing: 5) {
+                    KeystrokeArrows(motion: .press)
+                    CalculatorOnKey()
+                }
+                Text("3. Press ON")
+                    .font(.caption)
+            }
+            Image(systemName: "arrow.right")
+                .foregroundStyle(.secondary)
+            gEnterBeat(number: "4", title: "Release g + ENTER", motion: .release)
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
             VStack(spacing: 6) {
                 CalculatorDisplay("1.L 2.C 3.H")
-                Text("3. Press 2")
+                Text("5. Press 2")
                     .font(.caption)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .accessibilityLabel("Hold g and ENTER, press ON, then press 2 for the checksum")
+        .accessibilityLabel("Turn the calculator off with ON, hold g and ENTER, press ON, release g and ENTER, then press 2 for the checksum")
     }
 
-    private func buttonCallout(_ title: String, systemImage: String) -> some View {
+    private func gEnterBeat(number: String, title: String, motion: KeystrokeMotion) -> some View {
         VStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.title2)
-                .foregroundStyle(Color.accentColor)
-            Text(title)
+            VStack(spacing: 5) {
+                KeystrokeArrows(motion: motion)
+                VoyagerGPlusEnter()
+            }
+            Text("\(number). \(title)")
                 .font(.caption)
                 .multilineTextAlignment(.center)
-                .frame(width: 100)
+                .frame(width: 130)
         }
     }
+}
+
+private enum KeystrokeMotion {
+    case hold, press, release
+}
+
+private struct KeystrokeArrows: View {
+    var motion: KeystrokeMotion
+
+    var body: some View {
+        Group {
+            switch motion {
+            case .hold:
+                Image(systemName: "arrow.down")
+            case .press:
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.down")
+                    Image(systemName: "arrow.up")
+                }
+            case .release:
+                Image(systemName: "arrow.up")
+            }
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
+}
+
+private enum VoyagerKeyMetrics {
+    static let gSize = CGSize(width: 28, height: 28)
+    static let enterSize = CGSize(width: gSize.width, height: gSize.height * 3)
+    static let enterInkHeight: CGFloat = 8
+    static let enterLetterTop: CGFloat = 6
+    static let enterLetterGap: CGFloat = 2
+}
+
+private enum EnterLetterMetrics {
+    static var font: NSFont {
+        let probe = roundedRegular(100)
+        return roundedRegular(VoyagerKeyMetrics.enterInkHeight * 100 / probe.capHeight)
+    }
+
+    static func roundedRegular(_ size: CGFloat) -> NSFont {
+        let base = NSFont.systemFont(ofSize: size, weight: .regular)
+        let descriptor = base.fontDescriptor.withDesign(.rounded) ?? base.fontDescriptor
+        return NSFont(descriptor: descriptor, size: size) ?? base
+    }
+
+    static func size(of letter: String) -> CGSize {
+        let size = NSAttributedString(string: letter, attributes: [.font: font]).size()
+        return CGSize(width: ceil(size.width), height: ceil(size.height))
+    }
+}
+
+private struct VoyagerGPlusEnter: View {
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            VoyagerGKey()
+            Text("+")
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(height: VoyagerKeyMetrics.gSize.height)
+            VoyagerEnterKey()
+        }
+        .fixedSize()
+    }
+}
+
+/// Gold/brown f-key silhouette, but blue: lighter top face, darker front bevel.
+private struct VoyagerGKey: View {
+    private let light = Color(red: 0.36, green: 0.56, blue: 0.78)
+    private let dark = Color(red: 0.20, green: 0.36, blue: 0.54)
+    private let size = VoyagerKeyMetrics.gSize
+    private let darkFraction: CGFloat = 0.35
+
+    var body: some View {
+        let lightH = voyagerLightFaceHeight(total: size.height, darkFraction: darkFraction)
+        let darkH = size.height - lightH
+        ZStack {
+            voyagerKeyBody(size: size, light: light, dark: dark, darkFraction: darkFraction, corner: 5)
+            VStack(spacing: 0) {
+                Text("g")
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(.black)
+                    .frame(width: size.width, height: lightH, alignment: .center)
+                Color.clear.frame(height: darkH)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Tall ENTER: dark grey faces, blue LST *x* on the front bevel. ENTER letters are separate overlays.
+private struct VoyagerEnterKey: View {
+    private let light = Color(white: 0.30)
+    private let dark = Color(white: 0.16)
+    private let size = VoyagerKeyMetrics.enterSize
+    private let darkFraction: CGFloat = 0.20
+    private let legend = Color(red: 0.42, green: 0.72, blue: 0.92)
+
+    var body: some View {
+        let lightH = voyagerLightFaceHeight(total: size.height, darkFraction: darkFraction)
+        let darkH = size.height - lightH
+        ZStack(alignment: .topLeading) {
+            voyagerKeyBody(size: size, light: light, dark: dark, darkFraction: darkFraction, corner: 4)
+            VStack(spacing: 0) {
+                Color.clear.frame(width: size.width, height: lightH)
+                HStack(alignment: .lastTextBaseline, spacing: 1) {
+                    Text("LST")
+                        .font(.system(size: 8, weight: .semibold, design: .rounded))
+                    Text("\u{1D465}")
+                        .font(.system(size: 12))
+                }
+                .foregroundStyle(legend)
+                .frame(width: size.width, height: darkH)
+            }
+            ForEach(Array("ENTER".enumerated()), id: \.offset) { index, character in
+                let letter = String(character)
+                let letterSize = EnterLetterMetrics.size(of: letter)
+                Text(letter)
+                    .font(Font(EnterLetterMetrics.font))
+                    .foregroundStyle(Color(white: 0.95))
+                    .fixedSize()
+                    .offset(
+                        x: (size.width - letterSize.width) / 2,
+                        y: VoyagerKeyMetrics.enterLetterTop
+                            + CGFloat(index) * (VoyagerKeyMetrics.enterInkHeight + VoyagerKeyMetrics.enterLetterGap)
+                    )
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
+        .accessibilityHidden(true)
+    }
+}
+
+private struct CalculatorOnKey: View {
+    var body: some View {
+        Text("ON")
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(Color(white: 0.92))
+            .frame(width: 32, height: 22)
+            .background(Color(white: 0.22), in: RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+    }
+}
+
+private func voyagerLightFaceHeight(total: CGFloat, darkFraction: CGFloat, blend: CGFloat = 0.03) -> CGFloat {
+    total * (1 - darkFraction - blend)
+}
+
+private func voyagerKeyBody(
+    size: CGSize,
+    light: Color,
+    dark: Color,
+    darkFraction: CGFloat,
+    corner: CGFloat
+) -> some View {
+    let blend: CGFloat = 0.03
+    return RoundedRectangle(cornerRadius: corner, style: .continuous)
+        .fill(
+            LinearGradient(
+                stops: [
+                    .init(color: light, location: 0),
+                    .init(color: light, location: max(0, 1 - darkFraction - blend)),
+                    .init(color: dark, location: min(1, 1 - darkFraction + blend)),
+                    .init(color: dark, location: 1),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(Color.black.opacity(0.45), lineWidth: 0.8)
+        }
+        .frame(width: size.width, height: size.height)
 }
