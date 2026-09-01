@@ -6,8 +6,8 @@
 #
 # Prerequisites:
 #   - Developer ID Application identity in the keychain
-#   - notarytool keychain profile (default: notarytool-profile)
-#       xcrun notarytool store-credentials "notarytool-profile" \
+#   - notarytool keychain profile (default: SkagwayNotary, same Developer ID team)
+#       xcrun notarytool store-credentials "SkagwayNotary" \
 #         --apple-id "…" --team-id "99DA5P7M35" --password "app-specific-password"
 #
 # Flags:
@@ -26,7 +26,7 @@ source "${ROOT}/scripts/version.sh"
 BUMP=1
 NOTARIZE=1
 INSTALL=1
-NOTARY_PROFILE="${NOTARYTOOL_PROFILE:-notarytool-profile}"
+NOTARY_PROFILE="${NOTARYTOOL_PROFILE:-SkagwayNotary}"
 ENTITLEMENTS="${ROOT}/App/HP15CFlasher.entitlements"
 
 while [[ $# -gt 0 ]]; do
