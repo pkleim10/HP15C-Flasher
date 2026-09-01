@@ -12,7 +12,7 @@ The original 1982 HP 15C (and the 2011 Limited Edition) used HP’s own **Nut** 
 
 **Atmel** designed that SAM family of microcontrollers and the way you program them over USB. **Microchip** bought Atmel in 2016, so datasheets and tools now say Microchip. The silicon and the programming protocol are the same Atmel design.
 
-**SAM-BA** (SAM Boot Assistant) is Atmel’s standard programming path for these chips. HP put an Atmel MCU in the CE and used the stock “how you program this chip” stack. The pogo cable’s ERASE and RESET buttons hit the chip’s usual SAM-BA entry pins.
+**SAM-BA** (SAM Boot Assistant) is Atmel’s standard programming path for these chips — not an HP invention. The CE is an HP-branded calculator designed and manufactured by HP’s licensees (Moravia Consulting, and Royal Consumer in some regions), not by HP Inc. engineering. They used the same Atmel/Microchip ATSAM4L MCU family as recent HP 12C models, and the stock SAM-BA programming stack that comes with that chip. The pogo cable’s ERASE and RESET buttons hit the chip’s usual SAM-BA entry pins.
 
 SAM-BA is three related pieces:
 
@@ -20,7 +20,7 @@ SAM-BA is three related pieces:
 2. **The host** — Software on a computer that talks that protocol. Officially that is Windows **SAM-BA 2.16/2.18**. HP 15C Flasher is a native Mac host for the same protocol.
 3. **The SRAM applet** — A small helper the host copies into RAM and runs. The monitor itself must not program flash (it lives in flash; the flash controller would stall it). The applet does the erase/write, then goes away. This app ships Atmel’s official `applet-flash-sam4l4.bin` for that.
 
-HP (or whoever built the CE firmware) owns the **calculator application** above `0x4000` — the Voyager image you choose as a `.bin`. This download does not include that file. Mach II Labs is not affiliated with HP, Atmel, or Microchip.
+The **calculator application** above `0x4000` is the Voyager image you choose as a `.bin` (HP-branded firmware from the licensee, not this app). This download does not include that file. Mach II Labs is not affiliated with HP, Atmel, Microchip, or Moravia.
 
 ---
 
