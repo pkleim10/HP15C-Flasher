@@ -7,4 +7,10 @@ DerivedData/
 xcuserdata/
 *.xcuserstate
 signing.env
+
+# Atmel SAM-BA applet/monitor sources — never commit. The shipping artifact
+# is the official .bin, embedded in SambaFlashAppletImage.swift.
 .cursor/skills/sam4l-samba-flash/extracted/
+*.c
+*.h
+

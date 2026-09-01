@@ -3,6 +3,8 @@
 Source of truth: Atmel SAM-BA 2.16 Windows installer (NSIS PE32).  
 License: [THIRD_PARTY.md](../../../THIRD_PARTY.md). Do not issue host `W#` to FLASHCALW. Drive this applet.
 
+**Never commit Atmel `*.c` / `*.h`.** A local extract of the installer (if you have one) lives under `extracted/` and is gitignored. The shipping artifact is `applet-flash-sam4l4.bin`, embedded in `SambaFlashAppletImage.swift`.
+
 Local copies (gitignored tree + small bin at skill root):
 
 | File | Role |
@@ -168,135 +170,25 @@ Version string in this tree is `SAM_BA_VERSION "1.1"` plus `__DATE__` `__TIME__`
 
 The applet `ResetException` (`applet_cstartup.c`) runs `applet_main`, then falls off the function so `BLX` returns to the monitor. It does **not** branch to a fixed monitor address. Host must not expect a `>` or any G# reply in binary mode.
 
-### Why our unused `FlashApplet` never came back
-
-| Ours (`FlashApplet.swift`) | Official |
-|---|---|
-| Load `0x20001000`, entry `0x20001001` | Load / `G#` `0x20002000` |
-| Raw Thumb blob, no vector table | Cortex-M table at load; reset at `[load+4]` |
-| Host treated `G#` as “jump to Thumb PC and wait for return token” | `G#` reads **word at address+4** and **calls** it |
-| Done flag: `MAIL_CMD = 0` | Done flag: `command = ~command` |
-| Mailbox `0x20001F00` | Mailbox `0x20002040` |
-
-`G20001000#` made the monitor execute the word at `0x20001004` (`0xF2C27500` from the blob) — not SRAM code. Monitor never resumed → next `w#` timed out (“timed out unlocking”).  
-`G20001001#` is worse (unaligned `[0x20001005]`).
-
-Even a correct vector table would still require polling `~cmd`, not waiting for a serial ACK.
+A home-grown Thumb blob at `0x20001000` never ran: this monitor’s `G#` calls `[address+4]`, so a raw `.text` with no vector table is not the reset handler. Do not revive that approach.
 
 ### Cross-checks (not invented)
 
 - **SAM-BA 2.16 installer**: primary evidence above. Applet sources ship inside the NSIS archive (`applets/sam4l/...`). Header still says `SAM_BA_APPLETS_VERSION "2.14"`.
-- **SAM-BA 2.18**: same 2.x Tcl + applet model (AT09423). No 2.18 installer in this pass; treat 2.16 `.bin` as the binary to drive unless a 2.18 dump differs by hash.
+- **SAM-BA 2.18**: same 2.x Tcl + applet model (AT09423). Treat the 2.16 `.bin` as the binary to drive unless a 2.18 dump differs by hash.
 - **Public GitHub `xtremekforever/sam-ba`**: older 2.x applets; SAM4**S** EEFC `main.c`, not SAM4L FLASHCALW. Same mailbox *idea*, different flash driver.
 - **bossac / BOSSA**: **no SAM4L**. Families are EEFC SAM3/SAM4S/SAM4E and SAMD. Protocol uses `S#` + `Y#` (WordCopy applet) / EEFC `FCR` — **not** this FLASHCALW mailbox. Do not copy BOSSA.
 - **SAM-BA 3.x**: QML / different host API; secure-monitor applets on other chips. Not the v1.1 Oct 2012 USB CDC monitor.
-- **OpenOCD / ASF**: OpenOCD is SWD. ASF `sam4l_sam-ba` **is** the monitor we extracted (`call_applet`). Useful as the same source, not a replacement protocol.
-- **AT03454** (in `extracted/docs/`): SAM-BA lives in flash `[0, 0x4000)`, app at `0x4000`. Confirms why host FCMD stalls fetch.
+- **AT03454**: SAM-BA lives in flash `[0, 0x4000)`, app at `0x4000`. Confirms why host FCMD stalls fetch.
 
 ---
 
-## 2. Unknowns (need a Windows SAM-BA USB/COM trace)
+## 2. Shipped host (`SambaFlashApplet`)
 
-Do **not** flash to learn these. Capture SAM-BA 2.16/2.18 on a live 15C CE (or a SAM4L-EK) with a USB analyzer / COM log:
-
-1. Exact `G#` line: confirm `G20002000#` with no extra `#` (SAM9G45 second-`#` workaround is commented out in 2.16 Tcl).
-2. First mailbox `w#` timing vs USB NACK duration on this CDC stack (Windows 10 ms + 1 s retries vs our 3 s `readWord` timeout).
-3. Whether Voyager/HP flow clicks **Unlock All** (fuses `0x40`) before Send, or only `SendFileNoLock`.
-4. Whether 2.18’s `applet-flash-sam4l4.bin` is byte-identical (hash). If not, use 2.18’s bin.
-5. INIT `bufferAddress` numeric value on real LC2C (should be just after BSS; ~`0x20002Axx` but **must** come from INIT).
-6. Whether `TCL_Write_Int` / `TCL_Go` insert any hidden delay or re-`N#`.
-
-Until (3) is known, first hardware write should be **one already-unlocked page** after INIT, with a command transcript.
-
----
-
-## 3. Recommended Swift types (do not implement in this pass)
-
-Ownership:
-
-- **`SambaClient`** keeps the monitor: `N#` `V#` `w` `W` `R` `S` `G`. `go(_:)` stays “send `G%08X#` and return”; it must **not** wait for a prompt. Document that `G#` is silent.
-- **`SambaFlashApplet`** (new) owns the official `.bin`, mailbox, INIT/WRITE/UNLOCK/ERASE_PAGE, and **poll `~cmd`**. It holds a `SambaClient` (borrowed, not owned).
-- **`FlashCalw`** keeps `identify()` and `readApplication()` (direct `R#` is fine). `writeApplication` should call `SambaFlashApplet`, not `issue(FCMD)`.
-- **`Flasher`** still owns session lifetime (`connect` / `withClient`) and passes `SambaClient` in.
-- **`FlashApplet`** (homebrew at `0x20001000`) stays unused; do not revive.
-
-Sketch:
-
-```swift
-public enum SambaAppletCommand: UInt32 {
-    case initialize = 0x00
-    case write = 0x02
-    case read = 0x03
-    case lock = 0x04
-    case unlock = 0x05
-    case erasePage = 0x44
-}
-
-public enum SambaAppletStatus: UInt32 {
-    case success = 0x00
-    case writeFail = 0x02
-    case protectFail = 0x04
-    case unprotectFail = 0x05
-    case eraseFail = 0x06
-    case fail = 0x0F
-}
-
-public struct SambaAppletInfo: Equatable {
-    public var memorySize: UInt32
-    public var bufferAddress: UInt32
-    public var bufferSize: UInt32
-    public var pageSize: UInt32
-    public var pageCount: UInt32
-    public var appStartPage: UInt32
-    public var lockRegionSize: UInt16
-    public var lockBitCount: UInt16
-}
-
-public final class SambaFlashApplet {
-    public static let loadAddress: UInt32 = 0x2000_2000
-    public static let mailboxAddress: UInt32 = 0x2000_2040
-    public static let goAddress: UInt32 = 0x2000_2000  // vector table base
-    public static let image: Data /* applet-flash-sam4l4.bin, 2652 bytes */
-
-    private let samba: SambaClient
-    public private(set) var info: SambaAppletInfo?
-
-    public init(samba: SambaClient)
-
-    public func loadAndInitialize(
-        comType: UInt32 = 0,
-        traceLevel: UInt32 = 0,
-        bank: UInt32 = 0
-    ) throws -> SambaAppletInfo
-
-    public func unlockRegion(_ region: Int) throws
-    public func write(flashOffset: UInt32, data: Data) throws -> Int
-    public func erasePage(_ page: Int) throws
-    public func read(flashOffset: UInt32, length: Int) throws -> Data
-
-    /// G# then poll mailbox+0 until word == ~command; return status at +4.
-    func run(_ command: SambaAppletCommand, timeout: TimeInterval) throws -> SambaAppletStatus
-}
-```
-
-Rules inside `write`:
+This is implemented. `SambaClient` keeps `N#` `V#` `w` `W` `R` `S` `G`. `go(_:)` sends `G%08X#` and returns (no prompt). `SambaFlashApplet` owns the official `.bin`, mailbox, INIT/WRITE/UNLOCK, and poll `~cmd`. `FlashCalw.writeApplication` calls the applet, not host FCMD.
 
 - Reject `flashOffset < 0x4000`.
-- Chunk to `info.bufferSize` (512).
-- Never send `0x01` (full erase) or `0x07` (security).
-- Keep a timestamped transcript of every `S#` / `W#` / `G#` / `w#`.
-
-Simulator: `G#` must read `[addr+4]`, call that Thumb entry, invert mailbox command. Today it runs the **homebrew** mailbox at `0x20001F00` — that must change before applet unit tests mean anything.
-
----
-
-## 4. Exact next implementation step
-
-One page, logged, no UI 224-page flash.
-
-1. Add `applet-flash-sam4l4.bin` (2652 bytes) as a bundle/resource or `static let image` in `SambaFlashApplet`.
-2. Implement `loadAndInitialize` + `run` (poll `~cmd`) only. No FCMD, no settle, no reopen.
-3. Teach `SimulatedCalculatorTransport` the official vector-table `G#` and mailbox at `0x20002040`. Unit test: load applet bytes, INIT, one 512-byte WRITE at offset `0x4000`, assert mailbox invert and flash contents. `commandSettleSeconds: 0`.
-4. On hardware: connect, INIT, transcript on, **write one page at `0x4000`** from a known-good 9090h factory image (never a damaged dump), read that page back with `R#`. Stop. If USB dies, capture the transcript and a Windows SAM-BA trace of the same INIT+one WRITE — do not retry with settle/reopen.
-
-If INIT `G#` already times out, the missing evidence is item 2 in Unknowns (poll timeout vs USB NACK), not another FCMD tweak.
+- Chunk to INIT `bufferSize` (512).
+- Never send applet command `0x01` (full erase) or `0x07` (security).
+- After every `S#`: `tcdrain` + 20 ms on hardware (`afterSendDelay`). After `G#`: 100 ms before the first `w#`; 1 s between poll retries.
+- Tests: `commandSettleSeconds: 0` / `afterSendDelay: 0`.
