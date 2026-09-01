@@ -13,7 +13,7 @@ struct HP15CFlasherCommand: ParsableCommand {
 
         Writes always start at 0x4000 so the ATSAM4L bootloader is left intact.
         """,
-        version: "0.1.0",
+        version: "1.0.0",
         subcommands: [List.self, Info.self, Validate.self, Backup.self, Flash.self]
     )
 }

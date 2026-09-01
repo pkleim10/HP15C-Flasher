@@ -514,7 +514,7 @@ private struct FitToSize<Content: View>: View {
 
 private extension Bundle {
     var miniatureVersionLabel: String {
-        let marketing = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        let marketing = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
         let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
         return "\(marketing) (\(build))"
     }
