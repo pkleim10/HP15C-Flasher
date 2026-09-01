@@ -21,15 +21,19 @@ public struct Flasher {
     public var ports: SerialPortListing
     public var requireExactFirmwareSize: Bool
     public var openTransport: (SerialPort) throws -> ByteTransport
+    /// Official SAM-BA delay after `G#` before the first mailbox poll (10 ms).
+    public var flashCommandSettleSeconds: TimeInterval
 
     public init(
         ports: SerialPortListing = DeviceSerialPortListing(),
         requireExactFirmwareSize: Bool = true,
-        openTransport: @escaping (SerialPort) throws -> ByteTransport = { try POSIXSerialLink(path: $0.path) }
+        openTransport: @escaping (SerialPort) throws -> ByteTransport = { try POSIXSerialLink(path: $0.path) },
+        flashCommandSettleSeconds: TimeInterval = 0.010
     ) {
         self.ports = ports
         self.requireExactFirmwareSize = requireExactFirmwareSize
         self.openTransport = openTransport
+        self.flashCommandSettleSeconds = flashCommandSettleSeconds
     }
 
     public func listProgrammingCables() throws -> [SerialPort] {
@@ -37,14 +41,26 @@ public struct Flasher {
     }
 
     public func requireProgrammingCable() throws -> SerialPort {
-        let cables = try listProgrammingCables()
-        if let modem = cables.first(where: { $0.name.lowercased().hasPrefix("cu.usbmodem") }) {
-            return modem
-        }
-        guard let first = cables.first else {
+        guard let first = try preferredProgrammingCables().first else {
             throw FlasherError.noProgrammingCable
         }
         return first
+    }
+
+    /// `cu.usbmodem` (Atmel SAM-BA CDC) first, then FTDI `cu.usbserial`.
+    public func preferredProgrammingCables() throws -> [SerialPort] {
+        let cables = try listProgrammingCables()
+        return cables.sorted { lhs, rhs in
+            let l = lhs.name.lowercased()
+            let r = rhs.name.lowercased()
+            return Self.portPriority(l) < Self.portPriority(r)
+        }
+    }
+
+    private static func portPriority(_ name: String) -> Int {
+        if name.hasPrefix("cu.usbmodem") { return 0 }
+        if name.hasPrefix("cu.usbserial") { return 1 }
+        return 2
     }
 
     public func planWrite(firmwareURL: URL, address: UInt32 = FlashLayout.applicationStart) throws -> FlashPlan {
@@ -57,14 +73,31 @@ public struct Flasher {
     }
 
     /// Opens the cable, enters SAM-BA mode, and reads CHIPID.
-    public func connect() throws -> ConnectedTarget {
-        let port = try requireProgrammingCable()
+    /// Only `cu.usbmodem` (Atmel CDC). The pogo FTDI `cu.usbserial` is not SAM-BA.
+    public func connect(timeout: TimeInterval = 3.0) throws -> ConnectedTarget {
+        let cables = try preferredProgrammingCables().filter {
+            $0.name.lowercased().hasPrefix("cu.usbmodem")
+        }
+        guard !cables.isEmpty else {
+            throw FlasherError.noProgrammingCable
+        }
+        var lastError: Error = FlasherError.noProgrammingCable
+        for port in cables {
+            do {
+                return try openAndIdentify(port, timeout: timeout)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError
+    }
+
+    private func openAndIdentify(_ port: SerialPort, timeout: TimeInterval) throws -> ConnectedTarget {
         let transport = try openTransport(port)
         let client = SambaClient(transport: transport)
         do {
-            try client.connect()
-            let flash = FlashCalw(samba: client)
-            let identity = try flash.identify()
+            try client.connect(timeout: timeout)
+            let identity = try FlashCalw(samba: client).identify()
             return ConnectedTarget(port: port, client: client, identity: identity)
         } catch {
             client.close()
@@ -76,6 +109,7 @@ public struct Flasher {
         firmwareURL: URL,
         address: UInt32 = FlashLayout.applicationStart,
         client: SambaClient? = nil,
+        verify: Bool = true,
         progress: FlashProgress? = nil
     ) throws {
         let plan = try planWrite(firmwareURL: firmwareURL, address: address)
@@ -83,11 +117,27 @@ public struct Flasher {
             throw FlasherError.noProgrammingCable
         }
         try withClient(client) { samba in
-            let flash = FlashCalw(samba: samba)
+            let flash = FlashCalw(samba: samba, commandSettleSeconds: flashCommandSettleSeconds)
             try flash.writeApplication(
                 plan.image.data,
                 progress: { progress?($0, .writing) },
-                verifyProgress: { progress?($0, .verifying) }
+                verifyProgress: { progress?($0, .verifying) },
+                verify: verify
+            )
+        }
+    }
+
+    public func verify(
+        firmwareURL: URL,
+        address: UInt32 = FlashLayout.applicationStart,
+        client: SambaClient? = nil,
+        progress: FlashProgress? = nil
+    ) throws {
+        let plan = try planWrite(firmwareURL: firmwareURL, address: address)
+        try withClient(client) { samba in
+            try FlashCalw(samba: samba).verifyApplication(
+                plan.image.data,
+                progress: { progress?($0, .verifying) }
             )
         }
     }

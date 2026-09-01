@@ -91,6 +91,10 @@ final class FlasherStore: ObservableObject {
 
     func advance() {
         wizard.advance()
+        if wizard.step == .programmingMode {
+            status = "Waiting for SAM-BA…"
+            Task { await refreshConnection() }
+        }
     }
 
     func goBack() {
@@ -139,26 +143,36 @@ final class FlasherStore: ObservableObject {
     }
 
     func backup(to url: URL) {
-        guard let client else { return }
         backupSkipped = false
         backupAssessment = nil
-        runBusy(statusText: "Reading firmware…") {
-            try self.flasher.read(to: url, client: client) { fraction, _ in
-                Task { @MainActor in
-                    self.progress = fraction
-                    self.progressCaption = "Backing up"
-                    self.progressIsVerify = false
+        let existing = client
+        let tool = flasher
+        beginBusy(statusText: "Reading firmware…", caption: "Backing up")
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                let samba = try await FlasherStore.preparedClient(existing: existing, tool: tool, store: self)
+                try tool.read(to: url, client: samba) { fraction, _ in
+                    Task { @MainActor in
+                        self.progress = fraction
+                        self.progressCaption = "Backing up"
+                        self.progressIsVerify = false
+                    }
                 }
-            }
-            return "Backup saved."
-        } onSuccess: {
-            if let saved = try? Data(contentsOf: url) {
-                self.backupAssessment = VoyagerFirmwareChecksum.backupAssessment(of: saved)
-            }
-            self.backupFileName = url.lastPathComponent
-            self.wizard.backupResolved = true
-            if let firmwareURL = self.firmwareURL, let selected = try? Data(contentsOf: firmwareURL) {
-                self.refreshFirmwareAssessment(selected: selected)
+                await MainActor.run {
+                    self.finishBusySuccess("Backup saved.") {
+                        if let saved = try? Data(contentsOf: url) {
+                            self.backupAssessment = VoyagerFirmwareChecksum.backupAssessment(of: saved)
+                        }
+                        self.backupFileName = url.lastPathComponent
+                        self.wizard.backupResolved = true
+                        if let firmwareURL = self.firmwareURL, let selected = try? Data(contentsOf: firmwareURL) {
+                            self.refreshFirmwareAssessment(selected: selected)
+                        }
+                    }
+                }
+            } catch {
+                await MainActor.run { self.finishBusyFailure(error) }
             }
         }
     }
@@ -216,34 +230,29 @@ final class FlasherStore: ObservableObject {
     }
 
     func flash() {
-        guard let firmwareURL, let client else { return }
+        guard let firmwareURL else { return }
         confirmFlash = false
-        runBusy(statusText: "Writing firmware…", caption: "Flashing") {
-            try self.flasher.write(firmwareURL: firmwareURL, client: client) { fraction, phase in
-                Task { @MainActor in
-                    switch phase {
-                    case .writing:
-                        self.progress = min(1, fraction)
-                        self.progressCaption = "Flashing"
-                        self.progressIsVerify = false
-                        self.status = "Writing firmware…"
-                    case .verifying:
-                        if !self.progressIsVerify {
-                            self.progress = nil
-                            self.progressBarID += 1
-                            self.progressCaption = "Verifying"
-                            self.progressIsVerify = true
-                            self.status = "Verifying firmware…"
-                        }
-                        self.progress = fraction
-                    case .reading:
-                        break
+        let url = firmwareURL
+        let existing = client
+        let tool = flasher
+        beginBusy(statusText: "Writing firmware…", caption: "Flashing")
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                let samba = try await FlasherStore.preparedClient(existing: existing, tool: tool, store: self)
+                try tool.write(firmwareURL: url, client: samba, verify: true) { fraction, phase in
+                    Task { @MainActor in
+                        self.applyFlashProgress(fraction, phase)
                     }
                 }
+                await MainActor.run {
+                    self.finishBusySuccess("Flashed and verified.") {
+                        self.wizard.flashSucceeded = true
+                    }
+                }
+            } catch {
+                await MainActor.run { self.finishBusyFailure(error) }
             }
-            return "Flashed and verified."
-        } onSuccess: {
-            self.wizard.flashSucceeded = true
         }
     }
 
@@ -257,7 +266,8 @@ final class FlasherStore: ObservableObject {
             simulator = sim
             flasher = Flasher(
                 ports: SimulatedPortListing(),
-                openTransport: { _ in sim }
+                openTransport: { _ in sim },
+                flashCommandSettleSeconds: 0
             )
             status = "DEMO: connecting simulated ATSAM4LC2C…"
             Task { await refreshConnection() }
@@ -277,12 +287,7 @@ final class FlasherStore: ObservableObject {
         )
     }
 
-    private func runBusy(
-        statusText: String,
-        caption: String? = "Backing up",
-        work: @escaping () throws -> String,
-        onSuccess: @escaping () -> Void
-    ) {
+    private func beginBusy(statusText: String, caption: String?) {
         wizard.isBusy = true
         lastError = nil
         successMessage = nil
@@ -290,50 +295,117 @@ final class FlasherStore: ObservableObject {
         progressCaption = caption
         progressIsVerify = false
         status = statusText
-        Task.detached {
+    }
+
+    private func finishBusySuccess(_ message: String, extra: () -> Void) {
+        wizard.isBusy = false
+        progress = 1
+        progressCaption = nil
+        progressIsVerify = false
+        successMessage = message
+        status = "Connected: \(chipLabel)"
+        extra()
+    }
+
+    private func finishBusyFailure(_ error: Error) {
+        wizard.isBusy = false
+        progress = nil
+        progressCaption = nil
+        progressIsVerify = false
+        lastError = error.localizedDescription
+        status = "Operation failed."
+        disconnect()
+        wizard.identitySupported = false
+    }
+
+    private func applyFlashProgress(_ fraction: Double, _ phase: FlashProgressPhase) {
+        switch phase {
+        case .writing:
+            progress = min(1, fraction)
+            progressCaption = "Flashing"
+            progressIsVerify = false
+            status = "Writing firmware…"
+        case .verifying:
+            if !progressIsVerify {
+                progress = nil
+                progressBarID += 1
+                progressCaption = "Verifying"
+                progressIsVerify = true
+                status = "Verifying firmware…"
+            }
+            progress = fraction
+        case .reading:
+            break
+        }
+    }
+
+    /// Ping/connect on the caller’s executor so flash sleeps never run on the UI thread.
+    private nonisolated static func preparedClient(
+        existing: SambaClient?,
+        tool: Flasher,
+        store: FlasherStore
+    ) async throws -> SambaClient {
+        if let existing {
             do {
-                let done = try work()
-                await MainActor.run {
-                    self.wizard.isBusy = false
-                    self.progress = 1
-                    self.progressCaption = nil
-                    self.progressIsVerify = false
-                    self.successMessage = done
-                    self.status = "Connected: \(self.chipLabel)"
-                    onSuccess()
-                }
+                try existing.ping(timeout: 2.0)
+                return existing
             } catch {
                 await MainActor.run {
-                    self.wizard.isBusy = false
-                    self.progress = nil
-                    self.progressCaption = nil
-                    self.progressIsVerify = false
-                    self.lastError = error.localizedDescription
-                    self.status = "Operation failed."
+                    store.status = "Reconnecting to SAM-BA…"
+                    store.disconnect()
                 }
+                try await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
+        do {
+            let connected = try tool.connect(timeout: 3.0)
+            await MainActor.run { store.adopt(connected) }
+            return connected.client
+        } catch {
+            if case FlasherError.sambaTimeout = error {
+                throw FlasherError.sambaTimeout(
+                    "Timed out reconnecting to SAM-BA. Leave the cable plugged in. If Status is not Connected, hold ERASE, press RESET, then release ERASE."
+                )
+            }
+            throw error
+        }
+    }
+
+    private func adopt(_ connected: ConnectedTarget) {
+        client = connected.client
+        identity = connected.identity
+        portPath = connected.port.path
+        sambaVersion = connected.client.version
+        wizard.identitySupported = connected.identity.isSupported15C
     }
 
     private func refreshConnection() async {
         if wizard.isBusy { return }
+        // Step 1 is seating the cable. Do not open serial there.
+        if wizard.step == .cable { return }
         let cables = (try? flasher.listProgrammingCables()) ?? []
+        let modems = cables.filter { $0.name.lowercased().hasPrefix("cu.usbmodem") }
         if cables.isEmpty {
             if client != nil {
                 disconnect()
                 wizard.identitySupported = false
-                status = "Waiting for programming cable…"
             }
+            status = "Waiting for programming cable…"
+            portPath = nil
             return
         }
         if client != nil { return }
-        do {
-            let connected = try flasher.connect()
-            client = connected.client
-            identity = connected.identity
-            portPath = connected.port.path
-            sambaVersion = connected.client.version
-            wizard.identitySupported = connected.identity.isSupported15C
+        portPath = modems.first?.path ?? cables.first?.path
+        if modems.isEmpty {
+            status = "Cable detected. Hold ERASE, press RESET, then release ERASE."
+            return
+        }
+        status = "Waiting for SAM-BA…"
+        let tool = flasher
+        let probed = await probeConnect(tool)
+        switch probed {
+        case .success(let connected):
+            adopt(connected)
             if connected.identity.isSupported15C {
                 status = "Connected: \(connected.identity.name)"
                 lastError = nil
@@ -345,10 +417,28 @@ final class FlasherStore: ObservableObject {
                     exid: connected.identity.exid
                 ).localizedDescription
             }
-        } catch {
+        case .failure:
             disconnect()
             wizard.identitySupported = false
-            status = error.localizedDescription
+            portPath = modems.first?.path ?? cables.first?.path
+            status = "Waiting for SAM-BA. Hold ERASE, press RESET, then release ERASE."
+        }
+    }
+
+    /// Handshake off the main thread. A wedged CDC node must not stall the poll loop.
+    private func probeConnect(_ tool: Flasher) async -> Result<ConnectedTarget, Error> {
+        await withCheckedContinuation { continuation in
+            let gate = ResumeOnce(continuation)
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    gate.finish(.success(try tool.connect(timeout: 1.5)))
+                } catch {
+                    gate.finish(.failure(error))
+                }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.5) {
+                gate.finish(.failure(FlasherError.sambaTimeout()))
+            }
         }
     }
 
@@ -358,5 +448,22 @@ final class FlasherStore: ObservableObject {
         identity = nil
         portPath = nil
         sambaVersion = nil
+    }
+}
+
+private final class ResumeOnce<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Never>?
+
+    init(_ continuation: CheckedContinuation<T, Never>) {
+        self.continuation = continuation
+    }
+
+    func finish(_ value: T) {
+        lock.lock()
+        let cont = continuation
+        continuation = nil
+        lock.unlock()
+        cont?.resume(returning: value)
     }
 }

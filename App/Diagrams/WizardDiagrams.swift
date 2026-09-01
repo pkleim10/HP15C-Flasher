@@ -466,7 +466,7 @@ private struct Step1ScreenMiniature: View {
                 Text("Continue")
                     .fontWeight(.medium)
             }
-            Text("\(Bundle.main.miniatureVersionLabel) · Mach II Labs · offline · no telemetry · firmware files stay on this Mac")
+            Text("\(Bundle.main.miniatureVersionLabel) · Mach II Labs · offline · no telemetry · free forever")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -959,56 +959,91 @@ struct FinishDiagram: View {
 
 struct ChecksumDiagram: View {
     var body: some View {
-        HStack(spacing: 8) {
-            VStack(spacing: 6) {
-                VStack(spacing: 5) {
-                    KeystrokeArrows(motion: .press)
-                    CalculatorOnKey()
+        VStack(spacing: 6) {
+            HStack(alignment: .center, spacing: 4) {
+                iconColumn {
+                    VStack(spacing: 5) {
+                        KeystrokeArrows(motion: .press)
+                        CalculatorOnKey()
+                    }
                 }
-                Text("1. Turn OFF")
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-            }
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
-            gEnterBeat(number: "2", title: "Hold g + ENTER", motion: .hold)
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
-            VStack(spacing: 6) {
-                VStack(spacing: 5) {
-                    KeystrokeArrows(motion: .press)
-                    CalculatorOnKey()
+                connector
+                iconColumn {
+                    VStack(spacing: 5) {
+                        KeystrokeArrows(motion: .hold)
+                        VoyagerGPlusEnter()
+                    }
                 }
-                Text("3. Press ON")
-                    .font(.caption)
+                connector
+                iconColumn {
+                    VStack(spacing: 5) {
+                        KeystrokeArrows(motion: .press)
+                        CalculatorOnKey()
+                    }
+                }
+                connector
+                iconColumn {
+                    VStack(spacing: 5) {
+                        KeystrokeArrows(motion: .release)
+                        VoyagerGPlusEnter()
+                    }
+                }
+                connector
+                iconColumn {
+                    CalculatorDisplay("1.L 2.C 3.H")
+                }
+                connector
+                iconColumn {
+                    VStack(spacing: 5) {
+                        KeystrokeArrows(motion: .press)
+                        VoyagerTwoKey()
+                    }
+                }
             }
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
-            gEnterBeat(number: "4", title: "Release g + ENTER", motion: .release)
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
-            VStack(spacing: 6) {
-                CalculatorDisplay("1.L 2.C 3.H")
-                Text("5. Press 2")
-                    .font(.caption)
+            HStack(alignment: .top, spacing: 4) {
+                caption("1. Turn OFF")
+                connectorSlot
+                caption("2. Hold g + ENTER")
+                connectorSlot
+                caption("3. Press ON")
+                connectorSlot
+                caption("4. Release g + ENTER")
+                connectorSlot
+                caption("5. Test menu")
+                connectorSlot
+                caption("6. Press 2")
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .accessibilityLabel("Turn the calculator off with ON, hold g and ENTER, press ON, release g and ENTER, then press 2 for the checksum")
+        .accessibilityLabel("Turn the calculator off with ON, hold g and ENTER, press ON, release g and ENTER. The display shows the test menu 1.L 2.C 3.H. Press 2 for the checksum")
     }
 
-    private func gEnterBeat(number: String, title: String, motion: KeystrokeMotion) -> some View {
-        VStack(spacing: 6) {
-            VStack(spacing: 5) {
-                KeystrokeArrows(motion: motion)
-                VoyagerGPlusEnter()
-            }
-            Text("\(number). \(title)")
-                .font(.caption)
-                .multilineTextAlignment(.center)
-                .frame(width: 130)
-        }
+    private enum Layout {
+        static let arrow: CGFloat = 12
+    }
+
+    private func iconColumn<Icon: View>(@ViewBuilder icon: () -> Icon) -> some View {
+        icon()
+            .frame(maxWidth: .infinity)
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+    }
+
+    private var connector: some View {
+        Image(systemName: "arrow.right")
+            .foregroundStyle(.secondary)
+            .frame(width: Layout.arrow)
+    }
+
+    private var connectorSlot: some View {
+        Color.clear.frame(width: Layout.arrow, height: 1)
     }
 }
 
@@ -1075,6 +1110,40 @@ private struct VoyagerGPlusEnter: View {
             VoyagerEnterKey()
         }
         .fixedSize()
+    }
+}
+
+/// Digit key: dark faces, ivory numeral on the top, blue g-shifted legend on the bevel.
+private struct VoyagerTwoKey: View {
+    private let light = Color(white: 0.30)
+    private let dark = Color(white: 0.16)
+    private let ivory = Color(red: 0.93, green: 0.89, blue: 0.72)
+    private let legend = Color(red: 0.42, green: 0.72, blue: 0.92)
+    private let size = VoyagerKeyMetrics.gSize
+    private let darkFraction: CGFloat = 0.32
+
+    var body: some View {
+        let lightH = voyagerLightFaceHeight(total: size.height, darkFraction: darkFraction)
+        let darkH = size.height - lightH
+        ZStack {
+            voyagerKeyBody(size: size, light: light, dark: dark, darkFraction: darkFraction, corner: 5)
+            VStack(spacing: 0) {
+                Text("2")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(ivory)
+                    .frame(width: size.width, height: lightH, alignment: .center)
+                HStack(spacing: 1) {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 6, weight: .bold))
+                    Text("H")
+                        .font(.system(size: 8, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(legend)
+                .frame(width: size.width, height: darkH)
+            }
+        }
+        .frame(width: size.width, height: size.height)
+        .accessibilityHidden(true)
     }
 }
 

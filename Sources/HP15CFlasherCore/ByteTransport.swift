@@ -17,11 +17,11 @@ public extension ByteTransport {
         while result.count < count {
             let remaining = deadline.timeIntervalSinceNow
             if remaining <= 0 {
-                throw FlasherError.sambaTimeout
+                throw FlasherError.sambaTimeout()
             }
             let chunk = try read(max: count - result.count, timeout: remaining)
             if chunk.isEmpty {
-                throw FlasherError.sambaTimeout
+                throw FlasherError.sambaTimeout()
             }
             result.append(chunk)
         }

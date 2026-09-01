@@ -7,19 +7,42 @@ public final class SambaClient {
 
     private let transport: ByteTransport
     public private(set) var version: String = ""
+    public private(set) var commandTrace: [String] = []
+    /// Pause after each `S#` payload so the monitor can finish the copy before
+    /// the next command. Mac POSIX write returns once the host accepts the
+    /// bytes; Windows Tcl is slow enough that this gap happens naturally.
+    public var afterSendDelay: TimeInterval = 0
 
     public init(transport: ByteTransport) {
         self.transport = transport
     }
 
     public func connect(timeout: TimeInterval = defaultTimeout) throws {
-        try transport.write(Data("T#".utf8))
-        _ = try readUntilPromptOrTimeout(timeout: min(1.0, timeout))
+        try enterBinaryMode()
+        do {
+            try readVersion(timeout: timeout)
+        } catch {
+            guard case FlasherError.sambaTimeout = error else { throw error }
+            try sendCommand("T#")
+            _ = try? readUntilPromptOrTimeout(timeout: min(1.0, timeout))
+            try enterBinaryMode()
+            try readVersion(timeout: timeout)
+        }
+    }
 
-        try transport.write(Data("N#".utf8))
-        try transport.discardAvailable(timeout: 0.2)
+    /// Re-assert non-interactive mode. USB SAM-BA can drop out of binary mode after idle.
+    public func enterBinaryMode() throws {
+        try sendCommand("N#")
+        try? transport.discardAvailable(timeout: 0.2)
+    }
 
-        try transport.write(Data("V#".utf8))
+    /// CHIPID only. Do not send `N#` on a live session — it can desync USB CDC.
+    public func ping(timeout: TimeInterval = defaultTimeout) throws {
+        _ = try readWord(FlashCalw.chipidCIDR, timeout: timeout)
+    }
+
+    private func readVersion(timeout: TimeInterval) throws {
+        try sendCommand("V#")
         version = try readASCIILine(timeout: timeout)
         if version.isEmpty {
             throw FlasherError.sambaProtocol("empty version string")
@@ -54,6 +77,14 @@ public final class SambaClient {
         return result
     }
 
+    public func go(_ address: UInt32) throws {
+        try sendCommand(String(format: "G%08X#", address))
+    }
+
+    public func discardAvailable(timeout: TimeInterval = 0.05) {
+        try? transport.discardAvailable(timeout: timeout)
+    }
+
     public func write(to address: UInt32, data: Data) throws {
         guard !data.isEmpty else { return }
         var offset = 0
@@ -63,6 +94,9 @@ public final class SambaClient {
             let addr = address &+ UInt32(offset)
             try sendCommand(String(format: "S%08X,%08X#", addr, UInt32(chunk)))
             try transport.write(slice)
+            if afterSendDelay > 0 {
+                Thread.sleep(forTimeInterval: afterSendDelay)
+            }
             offset += chunk
         }
     }
@@ -72,6 +106,7 @@ public final class SambaClient {
     }
 
     private func sendCommand(_ command: String) throws {
+        commandTrace.append(command)
         try transport.write(Data(command.utf8))
     }
 
@@ -90,7 +125,7 @@ public final class SambaClient {
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
-        throw FlasherError.sambaTimeout
+        throw FlasherError.sambaTimeout()
     }
 
     private func readUntilPromptOrTimeout(timeout: TimeInterval) throws -> Data {

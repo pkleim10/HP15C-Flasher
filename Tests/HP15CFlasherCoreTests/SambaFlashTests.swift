@@ -73,3 +73,61 @@ final class FlashCalwTests: XCTestCase {
         XCTAssertEqual(mock.memory[0x0000] ?? 0xFF, 0xFF, "bootloader region must stay erased/untouched")
     }
 }
+
+final class SambaFlashAppletTests: XCTestCase {
+    func testOfficialImageHasVectorTable() {
+        XCTAssertEqual(SambaFlashApplet.image.count, 2652)
+        let sp = UInt32(SambaFlashApplet.image[0])
+            | UInt32(SambaFlashApplet.image[1]) << 8
+            | UInt32(SambaFlashApplet.image[2]) << 16
+            | UInt32(SambaFlashApplet.image[3]) << 24
+        let reset = UInt32(SambaFlashApplet.image[4])
+            | UInt32(SambaFlashApplet.image[5]) << 8
+            | UInt32(SambaFlashApplet.image[6]) << 16
+            | UInt32(SambaFlashApplet.image[7]) << 24
+        XCTAssertEqual(sp, 0x2000_7FF0)
+        XCTAssertEqual(reset, 0x2000_2809)
+    }
+
+    func testUploadVerifiesSRAMImage() throws {
+        let mock = SimulatedCalculatorTransport()
+        let client = SambaClient(transport: mock)
+        try client.connect()
+        try SambaFlashApplet(samba: client, goDelay: 0).upload()
+        XCTAssertEqual(
+            try client.read(from: SambaFlashApplet.loadAddress, length: SambaFlashApplet.image.count),
+            SambaFlashApplet.image
+        )
+    }
+
+    func testInitializeAndWriteOnePage() throws {
+        let mock = SimulatedCalculatorTransport()
+        let client = SambaClient(transport: mock)
+        try client.connect()
+        let applet = SambaFlashApplet(samba: client, goDelay: 0)
+        let info = try applet.loadAndInitialize()
+        XCTAssertEqual(info.memorySize, 0x20000)
+        XCTAssertEqual(info.bufferSize, 0x200)
+        XCTAssertEqual(info.pageSize, 0x200)
+        XCTAssertEqual(info.appStartPage, 32)
+        XCTAssertEqual(info.bufferAddress, 0x2000_2C00)
+        XCTAssertEqual(try client.readWord(SambaFlashApplet.mailboxAddress), ~SambaAppletCommand.initialize.rawValue)
+
+        let page = Data((0..<512).map { UInt8($0 & 0xFF) })
+        XCTAssertEqual(try applet.write(flashOffset: 0x4000, data: page), 512)
+        XCTAssertEqual(try client.readWord(SambaFlashApplet.mailboxAddress), ~SambaAppletCommand.write.rawValue)
+        XCTAssertEqual(try client.read(from: 0x4000, length: 512), page)
+        XCTAssertEqual(mock.memory[0x0000] ?? 0xFF, 0xFF)
+    }
+
+    func testWriteRejectsBootloaderOffset() throws {
+        let mock = SimulatedCalculatorTransport()
+        let client = SambaClient(transport: mock)
+        try client.connect()
+        let applet = SambaFlashApplet(samba: client, goDelay: 0)
+        _ = try applet.loadAndInitialize()
+        XCTAssertThrowsError(try applet.write(flashOffset: 0x3E00, data: Data(count: 512))) { error in
+            XCTAssertEqual(error as? FlasherError, .writeWouldTouchBootloader(address: 0x3E00))
+        }
+    }
+}

@@ -8,8 +8,7 @@ struct ContentView: View {
     var body: some View {
         wizardColumn
             .padding(24)
-            .frame(minWidth: 640, idealWidth: 680, alignment: .topLeading)
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(minWidth: 900, maxWidth: .infinity, minHeight: 640, maxHeight: .infinity, alignment: .topLeading)
             .confirmationDialog(
             "Flash the calculator?",
             isPresented: $store.confirmFlash,
@@ -35,75 +34,49 @@ struct ContentView: View {
     private var wizardColumn: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-            #if DEBUG
-            demoControls
-            #endif
-            stepChrome
-            stepBody
-            stepChecklist
-            if store.wizard.isBusy, let progress = store.progress {
-                labeledProgress(
-                    store.progressCaption ?? "Working",
-                    value: progress,
-                    tint: store.progressIsVerify ? .green : (store.progressCaption == "Flashing" ? .blue : Color.accentColor),
-                    identity: store.progressBarID
-                )
+            HStack(alignment: .top, spacing: 20) {
+                stepSidebar
+                VStack(alignment: .leading, spacing: 16) {
+                    stepBody
+                    if store.wizard.isBusy, let progress = store.progress {
+                        labeledProgress(
+                            store.progressCaption ?? "Working",
+                            value: progress,
+                            tint: store.progressIsVerify ? .green : (store.progressCaption == "Flashing" ? .blue : Color.accentColor),
+                            identity: store.progressBarID
+                        )
+                    }
+                    if let banner = store.stepBanner {
+                        wrappingText(banner.text)
+                            .foregroundStyle(banner.caution ? Color.orange : Color.green)
+                            .textSelection(.enabled)
+                    }
+                    if let error = store.lastError {
+                        Text(error)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                    }
+                    Spacer(minLength: 0)
+                    navigation
+                    Text("\(Bundle.main.appVersionLabel) · Mach II Labs · offline · no telemetry · free forever")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            if let banner = store.stepBanner {
-                wrappingText(banner.text)
-                    .foregroundStyle(banner.caution ? Color.orange : Color.green)
-                    .textSelection(.enabled)
-            }
-            if let error = store.lastError {
-                Text(error)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-            navigation
-            Text("\(Bundle.main.appVersionLabel) · Mach II Labs · offline · no telemetry · firmware files stay on this Mac")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("HP 15C Flasher")
-                .font(.largeTitle.weight(.semibold))
-            Text("Native SAM-BA programmer for the Collector’s Edition")
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    #if DEBUG
-    private var demoControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle(
-                "Use simulated calculator",
-                isOn: Binding(
-                    get: { store.usingSimulator },
-                    set: { store.setUsingSimulator($0) }
-                )
-            )
-            if store.usingSimulator {
-                Text("DEMO — no hardware. Continue unlocks once the fake ATSAM4LC2C connects.")
-                    .font(.caption.weight(.semibold))
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("HP 15C Flasher")
+                    .font(.largeTitle.weight(.semibold))
+                Text("Native SAM-BA programmer for the Collector’s Edition")
+                    .foregroundStyle(.secondary)
             }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.yellow.opacity(0.35))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-    }
-    #endif
-
-    private var stepChrome: some View {
-        HStack {
-            Text("Step \(store.wizard.step.number) of \(WizardStep.count)")
-                .font(.headline)
-            Text(store.wizard.step.title)
-                .foregroundStyle(.secondary)
             Spacer()
             if store.identity != nil {
                 Text(store.chipLabel)
@@ -231,39 +204,120 @@ struct ContentView: View {
         .accessibilityLabel("Warning. \(text)")
     }
 
-    private var stepChecklist: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(WizardStep.allCases, id: \.self) { step in
-                stepChecklistRow(step)
-            }
-        }
-        .padding(.top, 4)
-    }
+    private var sidebarGreen: Color { Color(red: 0.20, green: 0.78, blue: 0.40) }
+    private var sidebarBlue: Color { Color(red: 0.18, green: 0.47, blue: 0.98) }
 
-    private func stepChecklistRow(_ step: WizardStep) -> some View {
-        let complete = store.wizard.isComplete(step)
-        let upcoming = store.wizard.isUpcoming(step)
-        let current = store.wizard.step == step
-        return HStack(alignment: .top, spacing: 8) {
-            Image(systemName: complete ? "checkmark.circle.fill" : "circle")
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(complete ? Color.white : Color.secondary, complete ? Color.green : Color.secondary)
-                .font(.body)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(step.number). \(step.title)")
-                    .fontWeight(current ? .semibold : .regular)
-                if let detail = store.completionDetail(for: step) {
-                    Text(detail)
-                        .font(.caption)
-                        .textSelection(.enabled)
+    private var stepSidebar: some View {
+        let steps = WizardStep.allCases
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(steps.enumerated()), id: \.element) { index, step in
+                sidebarRow(step)
+                if index < steps.count - 1 {
+                    sidebarConnector(after: step)
                 }
             }
             Spacer(minLength: 0)
         }
-        .foregroundStyle(upcoming ? Color.secondary : Color.primary)
-        .opacity(upcoming ? 0.45 : 1)
+        .frame(width: 196, alignment: .leading)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func sidebarRow(_ step: WizardStep) -> some View {
+        let complete = store.wizard.isComplete(step)
+        let upcoming = store.wizard.isUpcoming(step)
+        let current = store.wizard.step == step
+        return HStack(alignment: .center, spacing: 10) {
+            sidebarMarker(step, complete: complete, current: current, upcoming: upcoming)
+            Text("\(step.number). \(step.title)")
+                .font(.callout.weight(current ? .semibold : .medium))
+                .foregroundStyle(upcoming ? Color.secondary : Color.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .background {
+            if current {
+                Capsule(style: .continuous)
+                    .fill(sidebarBlue.opacity(colorScheme == .dark ? 0.18 : 0.10))
+                    .shadow(color: sidebarBlue.opacity(0.35), radius: 6, y: 1)
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .stroke(sidebarBlue.opacity(0.85), lineWidth: 1.5)
+                    }
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(checklistAccessibilityLabel(step, complete: complete, upcoming: upcoming))
+    }
+
+    private func sidebarMarker(_ step: WizardStep, complete: Bool, current: Bool, upcoming: Bool) -> some View {
+        ZStack {
+            if complete {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [sidebarGreen.opacity(0.95), sidebarGreen.opacity(0.75)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .shadow(color: sidebarGreen.opacity(0.35), radius: 2, y: 1)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+            } else if current {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [sidebarBlue.opacity(0.98), sidebarBlue.opacity(0.78)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .shadow(color: sidebarBlue.opacity(0.4), radius: 3, y: 1)
+                Text("\(step.number)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            } else {
+                Circle()
+                    .fill(Color.secondary.opacity(colorScheme == .dark ? 0.28 : 0.18))
+                Text("\(step.number)")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .opacity(upcoming ? 0.85 : 1)
+    }
+
+    private func sidebarConnector(after step: WizardStep) -> some View {
+        let next = WizardStep(rawValue: step.rawValue + 1)
+        let toCurrent = next == store.wizard.step
+        let toComplete = next.map { store.wizard.isComplete($0) } ?? false
+        let color: Color = {
+            if toComplete { return sidebarGreen }
+            if toCurrent { return sidebarBlue }
+            return Color.secondary.opacity(0.35)
+        }()
+        return HStack(spacing: 0) {
+            Group {
+                if toComplete || toCurrent {
+                    Capsule()
+                        .fill(color)
+                        .frame(width: 2, height: 16)
+                } else {
+                    Capsule()
+                        .stroke(color, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                        .frame(width: 2, height: 16)
+                }
+            }
+            .padding(.leading, 18)
+            Spacer(minLength: 0)
+        }
+        .frame(height: 16)
+        .accessibilityHidden(true)
     }
 
     private func checklistAccessibilityLabel(_ step: WizardStep, complete: Bool, upcoming: Bool) -> String {
@@ -299,8 +353,9 @@ struct ContentView: View {
 
     private var navigation: some View {
         HStack {
-            Button("Back", action: store.goBack)
-                .disabled(!store.wizard.canGoBack)
+            if store.wizard.canGoBack {
+                Button("Back", action: store.goBack)
+            }
             Spacer()
             if store.wizard.step == .checksum {
                 Button("Done", action: store.done)

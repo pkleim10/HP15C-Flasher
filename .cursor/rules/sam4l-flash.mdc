@@ -1,0 +1,14 @@
+---
+description: SAM4L flash writes must follow the official SAM-BA applet path — no guess-and-flash.
+globs: "{Sources/HP15CFlasherCore/**,Tools/sam4l_flash_applet.c}"
+alwaysApply: false
+---
+
+# Flash path
+
+Before changing write/unlock/verify/Go/FCMD code, read `.cursor/skills/sam4l-samba-flash/SKILL.md`.
+
+- Do not add another settle/reopen/skip-unlock experiment.
+- Drive the official SAM-BA 2.16/2.18 SAM4L applet, or stop and name the missing evidence.
+- Never write below `0x4000`. Never Erase All.
+- Do not flash `hp15c-firmware-2.bin`.

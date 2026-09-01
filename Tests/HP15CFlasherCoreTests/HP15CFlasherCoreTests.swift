@@ -92,7 +92,11 @@ final class FlasherTests: XCTestCase {
         let mock = SimulatedCalculatorTransport()
         let client = SambaClient(transport: mock)
         try client.connect()
-        let flasher = Flasher(ports: FixedPortListing(ports: [port]), requireExactFirmwareSize: true)
+        let flasher = Flasher(
+            ports: FixedPortListing(ports: [port]),
+            requireExactFirmwareSize: true,
+            flashCommandSettleSeconds: 0
+        )
         try flasher.write(firmwareURL: url, client: client)
         let dumped = try client.read(
             from: FlashLayout.applicationStart,
@@ -108,6 +112,19 @@ final class FlasherTests: XCTestCase {
             SerialPort(path: "/dev/cu.debug-console"),
         ]
         XCTAssertEqual(ports.programmingCables.map(\.path), ["/dev/cu.usbmodem21401"])
+    }
+
+    func testPreferredOrderPutsAtmelModemBeforeFTDI() throws {
+        let flasher = Flasher(
+            ports: FixedPortListing(ports: [
+                SerialPort(path: "/dev/cu.usbserial-D30JNTFL"),
+                SerialPort(path: "/dev/cu.usbmodem23401"),
+            ])
+        )
+        XCTAssertEqual(
+            try flasher.preferredProgrammingCables().map(\.name),
+            ["cu.usbmodem23401", "cu.usbserial-D30JNTFL"]
+        )
     }
 
     private func writeTempFirmware() throws -> URL {

@@ -23,7 +23,9 @@ public final class POSIXSerialLink: ByteTransport {
         cfsetispeed(&tio, baud)
         cfsetospeed(&tio, baud)
         tio.c_cflag |= tcflag_t(CLOCAL | CREAD)
-        tio.c_cflag &= ~tcflag_t(PARENB | CSTOPB | CRTSCTS)
+        // Leave DTR/RTS alone and do not hang up on close. The pogo cable's
+        // FTDI can pulse RESET when DTR changes; SAM-BA then disappears.
+        tio.c_cflag &= ~tcflag_t(PARENB | CSTOPB | CRTSCTS | HUPCL)
         tio.c_cflag = (tio.c_cflag & ~tcflag_t(CSIZE)) | tcflag_t(CS8)
         withUnsafeMutableBytes(of: &tio.c_cc) { buf in
             buf[Int(VMIN)] = 0
@@ -34,6 +36,7 @@ public final class POSIXSerialLink: ByteTransport {
             throw FlasherError.serialOpenFailed(path)
         }
         _ = tcflush(fd, TCIOFLUSH)
+        usleep(50_000)
     }
 
     deinit {
@@ -52,11 +55,15 @@ public final class POSIXSerialLink: ByteTransport {
                         usleep(2000)
                         continue
                     }
+                    if errno == EIO || errno == ENXIO || errno == ENODEV {
+                        throw FlasherError.serialPortClosed
+                    }
                     throw FlasherError.sambaProtocol("serial write failed (errno \(errno))")
                 }
                 sent += n
             }
         }
+        _ = tcdrain(fd)
     }
 
     public func read(max maxCount: Int, timeout: TimeInterval) throws -> Data {
@@ -69,7 +76,15 @@ public final class POSIXSerialLink: ByteTransport {
                 return Data(buffer[0..<n])
             }
             if n == 0 {
-                throw FlasherError.sambaProtocol("serial port closed")
+                // Idle CDC/FTDI often returns 0; that is not a disconnect.
+                if Date() >= deadline {
+                    return Data()
+                }
+                usleep(2000)
+                continue
+            }
+            if errno == EIO || errno == ENXIO || errno == ENODEV {
+                throw FlasherError.serialPortClosed
             }
             if errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR {
                 if Date() >= deadline {

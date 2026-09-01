@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 /// CHIPID / CPUID snapshot for the calculator MCU.
@@ -102,9 +101,12 @@ public final class FlashCalw {
     public typealias Progress = (Double) -> Void
 
     private let samba: SambaClient
+    /// Official SAM-BA `GENERIC::Run` delay after `G#` before the first mailbox poll.
+    public var commandSettleSeconds: TimeInterval
 
-    public init(samba: SambaClient) {
+    public init(samba: SambaClient, commandSettleSeconds: TimeInterval = 0) {
         self.samba = samba
+        self.commandSettleSeconds = commandSettleSeconds
     }
 
     public func identify() throws -> DeviceIdentity {
@@ -132,102 +134,98 @@ public final class FlashCalw {
         return data
     }
 
-    public func writeApplication(_ data: Data, progress: Progress? = nil, verifyProgress: Progress? = nil) throws {
+    public func writeApplication(_ data: Data, progress: Progress? = nil, verifyProgress: Progress? = nil, verify: Bool = true) throws {
         try FirmwareImage.validate(data, requireExactSize: true)
         let address = FlashLayout.applicationStart
         guard FlashLayout.isSafeApplicationRange(address: address, length: UInt32(data.count)) else {
             throw FlasherError.writeWouldTouchBootloader(address: address)
         }
 
-        let identity = try identify()
+        let identity = try withTimeout("identifying the calculator", identify)
         guard identity.isSupported15C else {
             throw FlasherError.unsupportedDevice(name: identity.name, cidr: identity.cidr, exid: identity.exid)
         }
 
-        try waitReady()
-        try unlockApplicationRegions()
+        let applet = SambaFlashApplet(samba: samba, goDelay: commandSettleSeconds)
+        try withTimeout("uploading the flash applet") {
+            try applet.upload()
+        }
+        let info = try withTimeout("starting the flash applet") {
+            try applet.initialize()
+        }
+        try withTimeout("unlocking flash") {
+            try unlockApplicationRegions(using: applet, info: info)
+        }
 
-        let startPage = Int(address) / Self.pageSize
-        let pageCount = (data.count + Self.pageSize - 1) / Self.pageSize
+        let pageSize = Int(info.pageSize == 0 ? UInt32(Self.pageSize) : info.pageSize)
+        let pageCount = (data.count + pageSize - 1) / pageSize
         for index in 0..<pageCount {
-            let page = startPage + index
-            let pageAddress = UInt32(page * Self.pageSize)
-            if pageAddress < FlashLayout.applicationStart {
-                throw FlasherError.writeWouldTouchBootloader(address: pageAddress)
+            let flashOffset = address &+ UInt32(index * pageSize)
+            if flashOffset < FlashLayout.applicationStart {
+                throw FlasherError.writeWouldTouchBootloader(address: flashOffset)
             }
-
-            var pageData: Data
-            let start = index * Self.pageSize
-            let end = min(start + Self.pageSize, data.count)
-            pageData = data.subdata(in: start..<end)
-            if pageData.count < Self.pageSize {
-                pageData.append(Data(repeating: 0xFF, count: Self.pageSize - pageData.count))
+            var pageData = data.subdata(in: (index * pageSize)..<min((index + 1) * pageSize, data.count))
+            if pageData.count < pageSize {
+                pageData.append(Data(repeating: 0xFF, count: pageSize - pageData.count))
             }
-
-            try issue(command: Self.cmdEP, page: page)
-            try waitReady()
-            try checkStatus()
-
-            try issue(command: Self.cmdCPB, page: 0)
-            try waitReady()
-
-            try samba.write(to: pageAddress, data: pageData)
-            try issue(command: Self.cmdWP, page: page)
-            try waitReady()
-            try checkStatus()
-
+            _ = try withTimeout("writing page \(index + 1) of \(pageCount)") {
+                try applet.write(flashOffset: flashOffset, data: pageData)
+            }
             progress?(Double(index + 1) / Double(pageCount))
         }
         progress?(1.0)
-        Thread.sleep(forTimeInterval: 1.0)
+        guard verify else { return }
 
-        verifyProgress?(0)
-        let readback = try readApplication { fraction in
-            verifyProgress?(fraction)
+        try verifyApplication(data, progress: verifyProgress)
+    }
+
+    public func verifyApplication(_ data: Data, progress: Progress? = nil) throws {
+        try FirmwareImage.validate(data, requireExactSize: true)
+        progress?(0)
+        let readback = try withTimeout("verifying firmware") {
+            try readApplication { fraction in
+                progress?(fraction)
+            }
         }
         if readback != data {
             throw FlasherError.verifyMismatch
         }
-        verifyProgress?(1.0)
+        progress?(1.0)
     }
 
-    private var pagesPerRegion: Int {
-        // 128 KB / 512 B = 256 pages, 16 lock regions.
-        (128 * 1024 / Self.pageSize) / Self.lockRegions
-    }
-
-    private func unlockApplicationRegions() throws {
-        let firstAppPage = Int(FlashLayout.applicationStart) / Self.pageSize
+    private func unlockApplicationRegions(using applet: SambaFlashApplet, info: SambaAppletInfo) throws {
+        let lockBits = max(1, Int(info.lockBitCount == 0 ? UInt16(Self.lockRegions) : info.lockBitCount))
+        let pageCount = Int(info.pageCount == 0 ? 256 : info.pageCount)
+        let pagesPerRegion = max(1, pageCount / lockBits)
+        let firstAppPage = Int(info.appStartPage == 0 ? 32 : info.appStartPage)
         let firstRegion = firstAppPage / pagesPerRegion
-        for region in firstRegion..<Self.lockRegions {
-            let page = region * pagesPerRegion
-            try issue(command: Self.cmdUP, page: page)
-            try waitReady()
-            try checkStatus()
-        }
-    }
-
-    private func issue(command: UInt32, page: Int) throws {
-        let value = (Self.commandKey << 24) | (UInt32(page & 0xFFFF) << 8) | (command & 0x3F)
-        try samba.writeWord(Self.fcmd, value: value)
-    }
-
-    private func waitReady(timeout: TimeInterval = 5) throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let status = try samba.readWord(Self.fsr)
-            if status & Self.fsrFRDY != 0 {
-                return
+        for region in firstRegion..<lockBits {
+            do {
+                try applet.unlockRegion(region)
+            } catch {
+                if case FlasherError.appletFailed = error {
+                    continue
+                }
+                throw error
             }
-            usleep(1000)
         }
-        throw FlasherError.sambaTimeout
     }
 
-    private func checkStatus() throws {
-        let status = try samba.readWord(Self.fsr)
-        if status & (Self.fsrLOCKE | Self.fsrPROGE) != 0 {
-            throw FlasherError.flashControllerError(status: status)
+    private func withTimeout<T>(_ stage: String, _ body: () throws -> T) throws -> T {
+        do {
+            return try body()
+        } catch {
+            if case FlasherError.sambaTimeout = error {
+                throw timeoutError(stage)
+            }
+            throw error
         }
     }
+
+    private func timeoutError(_ stage: String) -> FlasherError {
+        .sambaTimeout(
+            "Timed out \(stage). Leave the cable plugged in. If Status is not Connected, hold ERASE, press RESET, then release ERASE."
+        )
+    }
+
 }

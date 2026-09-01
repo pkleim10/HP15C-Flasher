@@ -6,14 +6,14 @@ struct HP15CFlasherApp: App {
     @StateObject private var store = FlasherStore()
 
     var body: some Scene {
-        Window("HP 15C Flasher", id: "wizard") {
+        Window("HP 15C Flasher", id: "flasher-main") {
             ContentView()
                 .environmentObject(store)
                 .onAppear { store.start() }
                 .onDisappear { store.stop() }
         }
-        .windowResizability(.contentSize)
-        .defaultSize(width: 680, height: 760)
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 920, height: 760)
         #if DEBUG
         .commands {
             DebugCommands(store: store)
@@ -43,6 +43,7 @@ private struct DebugCommands: Commands {
                     set: { store.setUsingSimulator($0) }
                 )
             )
+            .keyboardShortcut("s", modifiers: [.command, .shift])
             Button("Pogo Wing Editor") {
                 openWindow(id: "pogo-wing-editor")
             }

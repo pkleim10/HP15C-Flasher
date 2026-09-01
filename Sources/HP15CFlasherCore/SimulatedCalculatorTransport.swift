@@ -144,7 +144,68 @@ public final class SimulatedCalculatorTransport: ByteTransport {
             pendingPayload = (address, Int(length), Int(length))
             return
         }
+        if command.first == "G" {
+            let address = try parseAddress(command)
+            runOfficialApplet(goAddress: address)
+            return
+        }
         throw FlasherError.sambaProtocol("unknown command \(command)")
+    }
+
+    /// `G#` calls `[address+4]`. Official applet mailbox is at `0x20002040`.
+    private func runOfficialApplet(goAddress: UInt32) {
+        let mailbox = SambaFlashApplet.mailboxAddress
+        if goAddress != SambaFlashApplet.goAddress {
+            return
+        }
+        let cmd = loadWord(mailbox)
+        var status: UInt32 = 0
+        if cmd == SambaAppletCommand.initialize.rawValue {
+            storeWord(mailbox &+ 0x08, 0x0002_0000)
+            storeWord(mailbox &+ 0x0C, 0x2000_2C00)
+            storeWord(mailbox &+ 0x10, 0x200)
+            storeWord(mailbox &+ 0x14, 0x0010_2000)
+            storeWord(mailbox &+ 0x18, 0x200)
+            storeWord(mailbox &+ 0x1C, 256)
+            storeWord(mailbox &+ 0x20, 32)
+        } else if cmd == SambaAppletCommand.write.rawValue {
+            let buffer = loadWord(mailbox &+ 0x08)
+            let length = Int(loadWord(mailbox &+ 0x0C))
+            let offset = loadWord(mailbox &+ 0x10)
+            if offset < FlashLayout.applicationStart {
+                storeWord(mailbox &+ 0x08, 0)
+                status = 0x02
+            } else {
+                for i in 0..<length {
+                    memory[offset &+ UInt32(i)] = memory[buffer &+ UInt32(i)] ?? 0xFF
+                }
+                storeWord(mailbox &+ 0x08, UInt32(length))
+            }
+        } else if cmd == SambaAppletCommand.unlock.rawValue {
+            status = 0
+        } else if cmd == SambaAppletCommand.erasePage.rawValue {
+            let page = Int(loadWord(mailbox &+ 0x08))
+            if page < 32 {
+                status = 0x04
+            } else {
+                let pageAddress = UInt32(page * FlashCalw.pageSize)
+                for i in 0..<FlashCalw.pageSize {
+                    memory[pageAddress &+ UInt32(i)] = 0xFF
+                }
+            }
+        } else if cmd == SambaAppletCommand.read.rawValue {
+            let buffer = loadWord(mailbox &+ 0x08)
+            let length = Int(loadWord(mailbox &+ 0x0C))
+            let offset = loadWord(mailbox &+ 0x10)
+            for i in 0..<length {
+                memory[buffer &+ UInt32(i)] = memory[offset &+ UInt32(i)] ?? 0xFF
+            }
+            storeWord(mailbox &+ 0x08, UInt32(length))
+        } else {
+            status = 0x0F
+        }
+        storeWord(mailbox &+ 0x04, status)
+        storeWord(mailbox, ~cmd)
     }
 
     private func applyFlashCommand(_ value: UInt32) {

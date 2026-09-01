@@ -8,11 +8,13 @@ public enum FlasherError: Error, Equatable, LocalizedError {
     case writeWouldTouchBootloader(address: UInt32)
     case noProgrammingCable
     case serialOpenFailed(String)
-    case sambaTimeout
+    case serialPortClosed
+    case sambaTimeout(String = "")
     case sambaProtocol(String)
     case unsupportedDevice(name: String, cidr: UInt32, exid: UInt32)
     case verifyMismatch
     case flashControllerError(status: UInt32)
+    case appletFailed(status: UInt32)
     case notConnected
 
     public var errorDescription: String? {
@@ -31,8 +33,13 @@ public enum FlasherError: Error, Equatable, LocalizedError {
             return "No HP programming cable detected. Put the calculator in programming mode and reconnect."
         case .serialOpenFailed(let path):
             return "Could not open serial port \(path)."
-        case .sambaTimeout:
-            return "Timed out waiting for the SAM-BA monitor. Keep ERASE held, press RESET, then release ERASE."
+        case .serialPortClosed:
+            return "The programming cable disconnected. Hold ERASE, press RESET, then release ERASE and wait for the port to reappear."
+        case .sambaTimeout(let detail):
+            if detail.isEmpty {
+                return "Timed out talking to SAM-BA. Leave the cable plugged in. If Status is not Connected, hold ERASE, press RESET, then release ERASE."
+            }
+            return detail
         case .sambaProtocol(let detail):
             return "SAM-BA protocol error: \(detail)"
         case .unsupportedDevice(let name, let cidr, let exid):
@@ -44,6 +51,11 @@ public enum FlasherError: Error, Equatable, LocalizedError {
             return "Verify failed: flash contents do not match the firmware file. Leave the cable in programming mode and try again."
         case .flashControllerError(let status):
             return String(format: "FLASHCALW reported an error (FSR=0x%08X).", status)
+        case .appletFailed(let status):
+            return String(
+                format: "SAM-BA flash applet failed (status=0x%08X). Leave the cable plugged in. If Status is not Connected, hold ERASE, press RESET, then release ERASE.",
+                status
+            )
         case .notConnected:
             return "Not connected to a programming cable."
         }
