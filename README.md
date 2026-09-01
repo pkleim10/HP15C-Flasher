@@ -33,6 +33,10 @@ The bootloader at `0x0000–0x3FFF` is never overwritten. Writes start at `0x040
 
 The app is offline. No telemetry, no network, no automatic diagnostics. Firmware files never leave this Mac.
 
+## How flashing works
+
+Beginner-friendly walkthrough of the bootloader, SRAM applet, paging, and memory map: [docs/how-flashing-works.md](docs/how-flashing-works.md).
+
 ## Acknowledgments
 
 The SRAM flash helper is `applet-flash-sam4l4.bin` from Atmel SAM-BA 2.16, © 2011–2012 Atmel Corporation, redistributed under the SAM Software Package License. See [THIRD_PARTY.md](THIRD_PARTY.md). Atmel’s name is not used to endorse this product.
