@@ -81,21 +81,27 @@ ctx.setStrokeColor(CGColor(red: 18 / 255, green: 18 / 255, blue: 18 / 255, alpha
 ctx.setLineWidth(4)
 ctx.strokePath()
 
-let fontSize = keyRect.width * 0.40
-let font = CTFontCreateWithName("HelveticaNeue-Bold" as CFString, fontSize, nil)
-let attrs: [NSAttributedString.Key: Any] = [
-    .font: font,
-    .foregroundColor: NSColor.black,
-]
-let letter = NSAttributedString(string: "f", attributes: attrs)
-let line = CTLineCreateWithAttributedString(letter)
-let letterBounds = CTLineGetImageBounds(line, ctx)
 let topMidY = splitY + (keyRect.maxY - splitY) / 2
-ctx.textPosition = CGPoint(
-    x: keyRect.midX - letterBounds.midX,
-    y: topMidY - letterBounds.midY
+let boltPointSize = keyRect.width * 0.39
+let boltConfig = NSImage.SymbolConfiguration(pointSize: boltPointSize, weight: .heavy)
+    .applying(NSImage.SymbolConfiguration(hierarchicalColor: .black))
+guard let bolt = NSImage(systemSymbolName: "bolt.fill", accessibilityDescription: nil)?
+    .withSymbolConfiguration(boltConfig) else {
+    fputs("Could not load bolt.fill\n", stderr)
+    exit(1)
+}
+var boltBounds = CGRect(origin: .zero, size: bolt.size)
+guard let boltCG = bolt.cgImage(forProposedRect: &boltBounds, context: nil, hints: nil) else {
+    fputs("Could not rasterize bolt.fill\n", stderr)
+    exit(1)
+}
+let boltRect = CGRect(
+    x: keyRect.midX - bolt.size.width / 2,
+    y: topMidY - bolt.size.height / 2,
+    width: bolt.size.width,
+    height: bolt.size.height
 )
-CTLineDraw(line, ctx)
+ctx.draw(boltCG, in: boltRect)
 
 guard let image = ctx.makeImage() else {
     fputs("Could not export image\n", stderr)
