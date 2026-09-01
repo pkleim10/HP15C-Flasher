@@ -162,7 +162,7 @@ struct ContentView: View {
                 Text("You should see")
                 CalculatorDisplay(store.expectedChecksumLabel)
             }
-            wrappingText("That value is the checksum of the installed firmware (the one you just flashed). Press ON to leave the test menu.")
+            wrappingText("That value is the checksum of the installed firmware (the one you just flashed). Press ON a few times to exit the test menu.")
                 .foregroundStyle(.secondary)
         }
     }

@@ -16,8 +16,8 @@ blobs have already failed on real hardware.
 
 - Do not guess-and-flash the calculator. No “try 80 ms / skip unlock / reopen.”
 - Do not write below `0x4000`. Do not issue Erase All / `EA`.
-- Do not flash `/Volumes/SSD/Downloads/hp15c-firmware-2.bin` (damaged 3A3Ah dump).
-- Restore image only: `/Volumes/SSD/Downloads/hp15c-firmware.bin` (factory 9090h).
+- Do not flash a damaged dump (for example checksum 3A3Ah).
+- Known-good factory restore image: 114688 bytes, checksum 9090h, real ARM vectors.
 - Reads, CHIPID, and backups are safe. Writes must use `SambaFlashApplet` (official `.bin`), not host FCMD.
 - Tests must keep `commandSettleSeconds: 0` (no hardware sleeps).
 
@@ -69,4 +69,5 @@ If evidence is missing, stop and say what to capture. Do not revert to host FCMD
 
 - Official 2.16 protocol (load/mailbox/`G#`/commands): [protocol.md](protocol.md)
 - Known hardware facts: [reference.md](reference.md)
+- Applet license: [THIRD_PARTY.md](../../../THIRD_PARTY.md)
 - Restore and cable: user holds ERASE, presses RESET, releases ERASE

@@ -29,6 +29,15 @@ public enum VoyagerFirmwareChecksum {
         formatted(displayedValue(of: data))
     }
 
+    /// LCD line after 2.C, for example `ChE - - 0A0Ah`.
+    public static func testMenuDisplay(_ value: UInt16) -> String {
+        "ChE - - \(formatted(value))"
+    }
+
+    public static func testMenuDisplay(of data: Data) -> String {
+        testMenuDisplay(displayedValue(of: data))
+    }
+
     public static func backupAssessment(of data: Data) -> BackupChecksumAssessment {
         BackupChecksumAssessment(displayed: displayedValue(of: data))
     }

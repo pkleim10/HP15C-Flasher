@@ -12,7 +12,7 @@ final class FlasherStore: ObservableObject {
     @Published var sambaVersion: String?
     @Published var firmwareURL: URL?
     @Published var firmwareDetail = "No firmware selected."
-    @Published var expectedChecksumLabel = "the checksum for your .bin"
+    @Published var expectedChecksumLabel = "ChE - - ----h"
     @Published var backupSkipped = false
     @Published var backupFileName: String?
     @Published var backupAssessment: BackupChecksumAssessment?
@@ -25,16 +25,13 @@ final class FlasherStore: ObservableObject {
     @Published var successMessage: String?
     @Published var confirmFlash = false
     @Published var confirmSkipBackup = false
-    #if DEBUG
     @Published var usingSimulator = false
-    #endif
 
     private var client: SambaClient?
     private var pollTask: Task<Void, Never>?
     private var flasher = Flasher()
-    #if DEBUG
     private var simulator: SimulatedCalculatorTransport?
-    #endif
+    private var simulatorHotKeyMonitor: Any?
 
     var canBackup: Bool {
         !wizard.isBusy && client != nil && identity?.isSupported15C == true
@@ -73,6 +70,10 @@ final class FlasherStore: ObservableObject {
     }
 
     func start() {
+        usingSimulator = false
+        simulator = nil
+        flasher = Flasher()
+        installSimulatorHotKey()
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -86,6 +87,7 @@ final class FlasherStore: ObservableObject {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        removeSimulatorHotKey()
         disconnect()
     }
 
@@ -117,7 +119,7 @@ final class FlasherStore: ObservableObject {
             let image = try FirmwareImage.load(from: url)
             firmwareURL = image.url
             let checksum = VoyagerFirmwareChecksum.formatted(of: image.data)
-            expectedChecksumLabel = checksum
+            expectedChecksumLabel = VoyagerFirmwareChecksum.testMenuDisplay(of: image.data)
             firmwareDetail = "\(image.url.lastPathComponent) — \(image.byteCount) bytes, write at 0x04000, checksum \(checksum)"
             wizard.firmwareOK = true
             lastError = nil
@@ -125,7 +127,7 @@ final class FlasherStore: ObservableObject {
         } catch {
             firmwareURL = nil
             firmwareDetail = error.localizedDescription
-            expectedChecksumLabel = "the checksum for your .bin"
+            expectedChecksumLabel = "ChE - - ----h"
             wizard.firmwareOK = false
             firmwareAssessment = nil
             lastError = error.localizedDescription
@@ -256,7 +258,32 @@ final class FlasherStore: ObservableObject {
         }
     }
 
-    #if DEBUG
+    private func installSimulatorHotKey() {
+        guard simulatorHotKeyMonitor == nil else { return }
+        simulatorHotKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard Self.isSimulatorToggle(event) else { return event }
+            Task { @MainActor in
+                guard let self else { return }
+                self.setUsingSimulator(!self.usingSimulator)
+            }
+            return nil
+        }
+    }
+
+    /// ⌘⇧S only. Ignores repeats and leftover modifier combinations.
+    private static func isSimulatorToggle(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, !event.isARepeat, event.keyCode == 1 else { return false }
+        let mods = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        return mods == [.command, .shift]
+    }
+
+    private func removeSimulatorHotKey() {
+        if let simulatorHotKeyMonitor {
+            NSEvent.removeMonitor(simulatorHotKeyMonitor)
+            self.simulatorHotKeyMonitor = nil
+        }
+    }
+
     func setUsingSimulator(_ enabled: Bool) {
         disconnect()
         wizard.identitySupported = false
@@ -277,7 +304,6 @@ final class FlasherStore: ObservableObject {
             status = "Waiting for programming cable…"
         }
     }
-    #endif
 
     private func refreshFirmwareAssessment(selected: Data) {
         firmwareAssessment = VoyagerFirmwareChecksum.firmwareFileAssessment(

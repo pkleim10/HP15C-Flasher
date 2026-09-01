@@ -13,6 +13,7 @@
 		A10000000000000000000034 /* WizardDiagrams.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000026 /* WizardDiagrams.swift */; };
 		A10000000000000000000035 /* PogoWingEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000028 /* PogoWingEditor.swift */; };
 		A10000000000000000000033 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000024 /* Assets.xcassets */; };
+		A10000000000000000000036 /* Credits.html in Resources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000029 /* Credits.html */; };
 		A10000000000000000000042 /* HP15CFlasherCore in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000041 /* HP15CFlasherCore */; };
 /* End PBXBuildFile section */
 
@@ -26,6 +27,7 @@
 		A10000000000000000000023 /* HP15CFlasher.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HP15CFlasher.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000024 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A10000000000000000000025 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000029 /* Credits.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = Credits.html; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +60,7 @@
 				A10000000000000000000024 /* Assets.xcassets */,
 				A10000000000000000000023 /* HP15CFlasher.entitlements */,
 				A10000000000000000000025 /* Info.plist */,
+				A10000000000000000000029 /* Credits.html */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -139,6 +142,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000033 /* Assets.xcassets in Resources */,
+				A10000000000000000000036 /* Credits.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -197,7 +201,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/HP15CFlasher.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 178;
+				CURRENT_PROJECT_VERSION = 185;
 				DEVELOPMENT_TEAM = 99DA5P7M35;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -225,11 +229,12 @@
 				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 178;
+				CURRENT_PROJECT_VERSION = 185;
 				DEVELOPMENT_TEAM = 99DA5P7M35;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SELECTED_FILES = readwrite;
+				EXCLUDED_SOURCE_FILE_NAMES = PogoWingEditor.swift;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = App/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (

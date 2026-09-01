@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 /// In-memory ATSAM4LC2C that speaks SAM-BA. Used by unit tests (delay 0) and
-/// the Debug-only simulated calculator (small per-page delay so progress is visible).
+/// the hidden in-app simulator (small per-page delay so progress is visible).
 public final class SimulatedCalculatorTransport: ByteTransport {
     public static let demoPort = SerialPort(path: "/dev/cu.usbmodemDEMO")
 

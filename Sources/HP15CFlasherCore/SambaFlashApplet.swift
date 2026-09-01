@@ -1,6 +1,7 @@
 import Foundation
 
 /// Official SAM-BA 2.16 SAM4L flash applet (`applet-flash-sam4l4.bin`).
+/// Copyright (c) 2011–2012 Atmel Corporation. See `THIRD_PARTY.md`.
 ///
 /// `G#` is a vector-table **call** at `loadAddress` (not a Thumb PC). The host
 /// waits by polling mailbox command until it equals `~cmd`. Never issues

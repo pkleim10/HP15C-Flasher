@@ -230,14 +230,14 @@ struct CableDiagram: View {
                 .clipShape(RoundedRectangle(cornerRadius: 1.2, style: .continuous))
                 .offset(x: bezel.minX, y: bezel.minY)
                 .allowsHitTesting(false)
-                Text("E")
+                Text("R")
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .position(
                         x: controllerRect.minX + controllerRect.width * 0.32,
                         y: controllerRect.minY + controllerRect.height * 0.30
                     )
-                Text("R")
+                Text("E")
                     .font(.system(size: 8, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .position(
@@ -260,7 +260,7 @@ struct CableDiagram: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
-        .accessibilityLabel("Battery bay with two coin cells. Pogo plug sits just above the keyed connector and can only be inserted one way. A cord leaves the top of the plug, bends right past an ERASE and RESET controller, and ends in a USB-A/C connector next to this Mac.")
+        .accessibilityLabel("Battery bay with two coin cells. Pogo plug sits just above the keyed connector and can only be inserted one way. A cord leaves the top of the plug, bends right past a RESET and ERASE controller, and ends in a USB-A/C connector next to this Mac.")
     }
 
     private func drawController(in rect: CGRect, ink: Color, context: inout GraphicsContext) {
@@ -275,14 +275,14 @@ struct CableDiagram: View {
         drawControllerButton(
             at: CGPoint(x: rect.minX + rect.width * 0.32, y: buttonY),
             diameter: diameter,
-            fill: .black,
+            fill: Color(white: 0.92),
             ink: ink,
             context: &context
         )
         drawControllerButton(
             at: CGPoint(x: rect.minX + rect.width * 0.68, y: buttonY),
             diameter: diameter,
-            fill: Color(white: 0.92),
+            fill: .black,
             ink: ink,
             context: &context
         )
@@ -544,8 +544,10 @@ enum PogoWingOutline {
 struct PogoPlugDrawing: View {
     @Environment(\.colorScheme) private var colorScheme
 
+    #if DEBUG
     /// When set (Debug wing editor), replaces `PogoWingOutline.left`.
     var leftWingOverride: [CGPoint]? = nil
+    #endif
 
     private static let phi: CGFloat = (1 + sqrt(5)) / 2
     private static let bodyTop: CGFloat = 0.215
@@ -658,7 +660,11 @@ struct PogoPlugDrawing: View {
     }
 
     private var leftWingPoints: [CGPoint] {
+        #if DEBUG
         leftWingOverride ?? PogoWingOutline.left
+        #else
+        PogoWingOutline.left
+        #endif
     }
 
     private func polyline(_ points: [CGPoint], in r: CGRect) -> Path {

@@ -22,6 +22,9 @@ How to flash
 
 The bootloader at 0x0000–0x3FFF is never overwritten.
 
+Acknowledgments
+The SRAM flash helper is `applet-flash-sam4l4.bin` from Atmel SAM-BA 2.16, © 2011–2012 Atmel Corporation, redistributed under the SAM Software Package License. Atmel’s name is not used to endorse this product. The download does not include HP firmware.
+
 Privacy
 The app is offline. No telemetry, no network, no automatic diagnostics. Firmware files never leave this Mac.
 

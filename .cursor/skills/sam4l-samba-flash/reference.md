@@ -22,15 +22,14 @@
 - Ping = CHIPID read only.
 - Version seen: `v1.1 Oct 16 2012 17:15:20`
 - Official Windows tool: SAM-BA 2.16/2.18, board **`sam4l-ek[not factory programmed]`** (`at91sam4l-ek`). There is no `at91sam4l8-ek` folder in 2.16. CIDR `0xAB0A07E0` (LC2C) is accepted by that script.
-- Installer on disk: `/Volumes/SSD/Downloads/sam-ba_2.16_windows.exe` (PE32 NSIS).
-- Protocol extract: [protocol.md](protocol.md). Applet: `applet-flash-sam4l4.bin` at `0x20002000`.
+- Protocol: [protocol.md](protocol.md). Applet: `applet-flash-sam4l4.bin` at `0x20002000` (from SAM-BA 2.16; see [THIRD_PARTY.md](../../../THIRD_PARTY.md)).
 
 ## Images
 
-| File | Role |
+| Kind | Role |
 |---|---|
-| `/Volumes/SSD/Downloads/hp15c-firmware.bin` | Good restore (15:45 Aug 31 2026). Factory **9090h**. 114688 bytes. ARM vectors. |
-| `/Volumes/SSD/Downloads/hp15c-firmware-2.bin` | Damaged on-chip dump (**3A3Ah**). Do not flash. |
+| Factory restore | 114688 bytes, checksum **9090h**, real ARM vectors. Safe to write at `0x4000`. |
+| Damaged dump | Example checksum **3A3Ah**. Do not flash. |
 
 Voyager displayed checksum = last non-padding byte duplicated (`VoyagerFirmwareChecksum.swift`). Known: factory 9090h, 2024 official 0A0Ah, DEC-only AF90h (not treated as recognized).
 
@@ -41,4 +40,4 @@ Voyager displayed checksum = last non-padding byte duplicated (`VoyagerFirmwareC
 
 ## Current Mac writer (proven 178)
 
-`SambaFlashApplet` loads official `applet-flash-sam4l4.bin` at `0x20002000`, mailbox `0x20002040`, `G20002000#`, poll `command == ~cmd`. After each `S#`: `tcdrain` + 20 ms (`SambaClient.afterSendDelay`). After each `G#`: 100 ms, then poll; 1 s between retries. Restored factory `hp15c-firmware.bin` (9090h) on a real CE. Host FCMD and homebrew `FlashApplet` are unused. See [protocol.md](protocol.md).
+`SambaFlashApplet` loads official `applet-flash-sam4l4.bin` at `0x20002000`, mailbox `0x20002040`, `G20002000#`, poll `command == ~cmd`. After each `S#`: `tcdrain` + 20 ms (`SambaClient.afterSendDelay`). After each `G#`: 100 ms, then poll; 1 s between retries. Host FCMD and homebrew `FlashApplet` are unused. See [protocol.md](protocol.md).

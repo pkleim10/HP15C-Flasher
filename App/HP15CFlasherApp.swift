@@ -16,7 +16,7 @@ struct HP15CFlasherApp: App {
         .defaultSize(width: 920, height: 760)
         #if DEBUG
         .commands {
-            DebugCommands(store: store)
+            DebugCommands()
         }
         #endif
 
@@ -31,19 +31,10 @@ struct HP15CFlasherApp: App {
 
 #if DEBUG
 private struct DebugCommands: Commands {
-    @ObservedObject var store: FlasherStore
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandMenu("Debug") {
-            Toggle(
-                "Use Simulated Calculator",
-                isOn: Binding(
-                    get: { store.usingSimulator },
-                    set: { store.setUsingSimulator($0) }
-                )
-            )
-            .keyboardShortcut("s", modifiers: [.command, .shift])
             Button("Pogo Wing Editor") {
                 openWindow(id: "pogo-wing-editor")
             }

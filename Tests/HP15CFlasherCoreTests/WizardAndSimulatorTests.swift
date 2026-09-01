@@ -106,6 +106,7 @@ final class VoyagerFirmwareChecksumTests: XCTestCase {
         var payload = Data(repeating: 0x02, count: 5)
         payload.append(0x0A)
         XCTAssertEqual(VoyagerFirmwareChecksum.formatted(of: payload), "0A0Ah")
+        XCTAssertEqual(VoyagerFirmwareChecksum.testMenuDisplay(of: payload), "ChE - - 0A0Ah")
     }
 
     func testFactoryBackupIsOKToProceed() {

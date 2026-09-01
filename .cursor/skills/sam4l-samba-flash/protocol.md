@@ -1,7 +1,7 @@
 # Official SAM-BA 2.16 SAM4L flash protocol
 
-Source of truth: extracted from `/Volumes/SSD/Downloads/sam-ba_2.16_windows.exe` (NSIS PE32, 12 MiB).  
-Do not guess. Do not issue host `W#` to FLASHCALW. Drive this applet.
+Source of truth: Atmel SAM-BA 2.16 Windows installer (NSIS PE32).  
+License: [THIRD_PARTY.md](../../../THIRD_PARTY.md). Do not issue host `W#` to FLASHCALW. Drive this applet.
 
 Local copies (gitignored tree + small bin at skill root):
 
@@ -297,6 +297,6 @@ One page, logged, no UI 224-page flash.
 1. Add `applet-flash-sam4l4.bin` (2652 bytes) as a bundle/resource or `static let image` in `SambaFlashApplet`.
 2. Implement `loadAndInitialize` + `run` (poll `~cmd`) only. No FCMD, no settle, no reopen.
 3. Teach `SimulatedCalculatorTransport` the official vector-table `G#` and mailbox at `0x20002040`. Unit test: load applet bytes, INIT, one 512-byte WRITE at offset `0x4000`, assert mailbox invert and flash contents. `commandSettleSeconds: 0`.
-4. On hardware: connect, INIT, transcript on, **write one page at `0x4000`** from factory `hp15c-firmware.bin` (not `-2.bin`), read that page back with `R#`. Stop. If USB dies, capture the transcript and a Windows SAM-BA trace of the same INIT+one WRITE — do not retry with settle/reopen.
+4. On hardware: connect, INIT, transcript on, **write one page at `0x4000`** from a known-good 9090h factory image (never a damaged dump), read that page back with `R#`. Stop. If USB dies, capture the transcript and a Windows SAM-BA trace of the same INIT+one WRITE — do not retry with settle/reopen.
 
 If INIT `G#` already times out, the missing evidence is item 2 in Unknowns (poll timeout vs USB NACK), not another FCMD tweak.
