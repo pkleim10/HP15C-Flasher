@@ -1,8 +1,8 @@
 #!/bin/bash
-# Shared version helpers for HP 15C Flasher (sourced, not executed).
+# Shared version helpers for 15CE Flasher (sourced, not executed).
 
 PBXPROJ="${ROOT}/HP15CFlasher.xcodeproj/project.pbxproj"
-APP_NAME="HP 15C Flasher"
+APP_NAME="15CE Flasher"
 FULL_PRODUCT_NAME="${APP_NAME}.app"
 BUNDLE_ID="com.machiilabs.HP15CFlasher"
 SCHEME="HP15CFlasher"

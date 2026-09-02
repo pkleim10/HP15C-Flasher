@@ -6,18 +6,26 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        wizardColumn
-            .padding(24)
-            .frame(minWidth: 900, maxWidth: .infinity, minHeight: 640, maxHeight: .infinity, alignment: .topLeading)
+        Group {
+            if store.showWelcome {
+                WelcomeView()
+            } else {
+                wizardColumn
+                    .padding(24)
+                    .frame(minWidth: 900, maxWidth: .infinity, minHeight: 640, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
             .confirmationDialog(
-            "Flash the calculator?",
+            store.usingSimulator ? "Flash the simulated calculator?" : "Flash the calculator?",
             isPresented: $store.confirmFlash,
             titleVisibility: .visible
         ) {
             Button("Flash at 0x04000", role: .destructive, action: store.flash)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("User memory will be wiped. The bootloader at 0x0000–0x3FFF is not overwritten.")
+            Text(store.usingSimulator
+                 ? "DEMO writes only the simulated calculator on this Mac. A real HP 15C is not changed."
+                 : "FLASH writes a real calculator. User memory will be wiped. The bootloader at 0x0000–0x3FFF is not overwritten.")
         }
         .confirmationDialog(
             "Skip backup?",
@@ -45,6 +53,9 @@ struct ContentView: View {
                             tint: store.progressIsVerify ? .green : (store.progressCaption == "Flashing" ? .blue : Color.accentColor),
                             identity: store.progressBarID
                         )
+                        if store.progressCaption == "Flashing", let header = store.flashPageHeader {
+                            flashPagePreview(header: header, lines: store.flashPageLines)
+                        }
                     }
                     if let banner = store.stepBanner {
                         wrappingText(banner.text)
@@ -72,12 +83,21 @@ struct ContentView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("HP 15C Flasher")
+                Text("15CE Flasher")
                     .font(.largeTitle.weight(.semibold))
-                Text("Native SAM-BA programmer for the Collector’s Edition")
+                Text(store.usingSimulator
+                     ? "DEMO — simulated Collector’s Edition"
+                     : "Native SAM-BA programmer for the Collector’s Edition")
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if store.usingSimulator {
+                Text("DEMO")
+                    .font(.caption.weight(.bold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.accentColor.opacity(0.18), in: Capsule())
+            }
             if store.identity != nil {
                 Text(store.chipLabel)
                     .font(.caption.monospaced())
@@ -104,12 +124,20 @@ struct ContentView: View {
             CableDiagram()
             wrappingText("Open the calculator's battery door and insert the POGO cable. The connector is keyed; the POGO can only be inserted one way. Make sure the plug snaps securely into place.")
             wrappingText("Plug the other end of the cable (USB-A or USB-C) into this Mac.")
+            if store.usingSimulator {
+                wrappingText("DEMO uses a simulated calculator. You do not need a cable. Follow the same steps so FLASH is familiar later.")
+                    .foregroundStyle(.secondary)
+            }
             warningBox("Use the POGO cable only on the HP 15C Collector’s Edition. This app will not flash other calculators. Do not use the cable on an HP 15C Limited Edition, a pre-2015 12C, an HP 20b, or an HP 30b, as it could permanently damage your calculator.")
         case .programmingMode:
             ProgrammingModeDiagram()
             wrappingText("On the cable's switch box, hold ERASE, press RESET, then release ERASE. The display stays off. The calculator's ON button is ignored in this state.")
+            if store.usingSimulator {
+                wrappingText("DEMO connects the simulated calculator automatically. Continue when it appears below.")
+                    .foregroundStyle(.secondary)
+            }
             connectionStatus
-            wrappingText("Once your calculator is recognized, continue with the next step.")
+            wrappingText("Once your calculator is recognized (“Connected: ATSAM4LC2C” is shown), continue with the next step.")
                 .foregroundStyle(.secondary)
         case .backup:
             wrappingText("Save a copy of the currently installed firmware in case you want to restore it later.")
@@ -138,12 +166,12 @@ struct ContentView: View {
         case .flash:
             wrappingText("Write starts at address 0x04000. The SAM-BA bootloader below that address is left intact.")
             if store.wizard.flashSucceeded {
-                Button("Flash Calculator") {
+                Button(store.usingSimulator ? "Flash Simulated Calculator" : "Flash Calculator") {
                     store.confirmFlash = true
                 }
                 .disabled(!store.canFlash)
             } else {
-                Button("Flash Calculator") {
+                Button(store.usingSimulator ? "Flash Simulated Calculator" : "Flash Calculator") {
                     store.confirmFlash = true
                 }
                 .buttonStyle(.borderedProminent)
@@ -164,6 +192,8 @@ struct ContentView: View {
             }
             wrappingText("That value is the checksum of the installed firmware (the one you just flashed). Press ON a few times to exit the test menu.")
                 .foregroundStyle(.secondary)
+            wrappingText("If you received the expected checksum of \(store.expectedChecksumShort), then congratulations — you have successfully updated the firmware on your HP 15C Collector’s Edition.")
+            wrappingText("If you received a different checksum, all is not lost. A retry with either the new firmware or the original backup is likely to succeed.")
         }
     }
 
@@ -335,6 +365,33 @@ struct ContentView: View {
         return label
     }
 
+    private func flashPagePreview(header: String, lines: [String]) -> some View {
+        let well = colorScheme == .dark ? Color(white: 0.08) : Color(white: 0.18)
+        let ink = Color(white: colorScheme == .dark ? 0.86 : 0.92)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(header)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                        Text(line)
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .foregroundStyle(ink)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            .frame(maxHeight: 120)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(well, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Flash page data. \(header)")
+    }
+
     private var connectionStatus: some View {
         let well = colorScheme == .dark ? Color(white: 0.08) : Color(white: 0.18)
         let ink = Color(white: colorScheme == .dark ? 0.86 : 0.92)
@@ -353,7 +410,9 @@ struct ContentView: View {
 
     private var navigation: some View {
         HStack {
-            if store.wizard.canGoBack {
+            if store.wizard.step == .cable {
+                Button("Back", action: store.returnToWelcome)
+            } else if store.wizard.canGoBack {
                 Button("Back", action: store.goBack)
             }
             Spacer()
@@ -369,7 +428,7 @@ struct ContentView: View {
     }
 }
 
-private extension Bundle {
+extension Bundle {
     var appVersionLabel: String {
         let marketing = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
         let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"

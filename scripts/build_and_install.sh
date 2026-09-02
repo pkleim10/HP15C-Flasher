@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build HP 15C Flasher and install it to /Applications.
+# Build 15CE Flasher and install it to /Applications.
 #
 # Default: Release build, auto-bumps CURRENT_PROJECT_VERSION in the Xcode project.
 # Does not create a DMG — use scripts/package_dmg.sh for a release.

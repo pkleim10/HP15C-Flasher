@@ -188,6 +188,17 @@ final class VoyagerFirmwareChecksumTests: XCTestCase {
 }
 
 final class SimulatedCalculatorTests: XCTestCase {
+    func testFlashPageWriteFormatsLittleEndianWords() {
+        var page = Data(repeating: 0, count: 4)
+        page[0] = 0x90
+        page[1] = 0x90
+        page[2] = 0x0A
+        page[3] = 0x0A
+        let write = FlashPageWrite(flashOffset: 0x04000, pageIndex: 0, pageCount: 224, pageData: page)
+        XCTAssertEqual(write.header, "Page 1 of 224 · 0x04000")
+        XCTAssertEqual(write.formattedWordLines(), ["9090 0A0A"])
+    }
+
     func testDelayedWriteReportsIncreasingProgress() throws {
         let sim = SimulatedCalculatorTransport(operationDelay: 0.002, preloadApplication: true)
         let client = SambaClient(transport: sim)
@@ -224,6 +235,8 @@ final class SimulatedCalculatorTests: XCTestCase {
             .appendingPathComponent("sim-backup-\(UUID().uuidString).bin")
         defer { try? FileManager.default.removeItem(at: url) }
         try flasher.read(to: url, client: connected.client)
-        XCTAssertEqual(try Data(contentsOf: url).count, FlashLayout.expectedFirmwareByteCount)
+        let saved = try Data(contentsOf: url)
+        XCTAssertEqual(saved.count, FlashLayout.expectedFirmwareByteCount)
+        XCTAssertEqual(VoyagerFirmwareChecksum.backupAssessment(of: saved), .factoryOriginal(0x9090))
     }
 }

@@ -5,13 +5,13 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>HP 15C Flasher</string>
+	<string>15CE Flasher</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.machiilabs.HP15CFlasher</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>HP 15C Flasher</string>
+	<string>15CE Flasher</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleIconName</key>
@@ -27,6 +27,6 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © Mach II Labs</string>
+	<string>Copyright © 2026 Mach II Labs</string>
 </dict>
 </plist>

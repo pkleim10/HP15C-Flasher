@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000030 /* HP15CFlasherApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000020 /* HP15CFlasherApp.swift */; };
 		A10000000000000000000031 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000021 /* ContentView.swift */; };
+		A10000000000000000000038 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000037 /* WelcomeView.swift */; };
 		A10000000000000000000032 /* FlasherStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000022 /* FlasherStore.swift */; };
 		A10000000000000000000034 /* WizardDiagrams.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000026 /* WizardDiagrams.swift */; };
 		A10000000000000000000035 /* PogoWingEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000028 /* PogoWingEditor.swift */; };
@@ -18,9 +19,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A10000000000000000000003 /* HP 15C Flasher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HP 15C Flasher.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000003 /* 15CE Flasher.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "15CE Flasher.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000020 /* HP15CFlasherApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HP15CFlasherApp.swift; sourceTree = "<group>"; };
 		A10000000000000000000021 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A10000000000000000000037 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		A10000000000000000000022 /* FlasherStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlasherStore.swift; sourceTree = "<group>"; };
 		A10000000000000000000026 /* WizardDiagrams.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WizardDiagrams.swift; sourceTree = "<group>"; };
 		A10000000000000000000028 /* PogoWingEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PogoWingEditor.swift; sourceTree = "<group>"; };
@@ -55,6 +57,7 @@
 			children = (
 				A10000000000000000000020 /* HP15CFlasherApp.swift */,
 				A10000000000000000000021 /* ContentView.swift */,
+				A10000000000000000000037 /* WelcomeView.swift */,
 				A10000000000000000000022 /* FlasherStore.swift */,
 				A10000000000000000000027 /* Diagrams */,
 				A10000000000000000000024 /* Assets.xcassets */,
@@ -77,7 +80,7 @@
 		A10000000000000000000012 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A10000000000000000000003 /* HP 15C Flasher.app */,
+				A10000000000000000000003 /* 15CE Flasher.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -101,8 +104,8 @@
 			packageProductDependencies = (
 				A10000000000000000000041 /* HP15CFlasherCore */,
 			);
-			productName = "HP 15C Flasher";
-			productReference = A10000000000000000000003 /* HP 15C Flasher.app */;
+			productName = "15CE Flasher";
+			productReference = A10000000000000000000003 /* 15CE Flasher.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -155,6 +158,7 @@
 			files = (
 				A10000000000000000000030 /* HP15CFlasherApp.swift in Sources */,
 				A10000000000000000000031 /* ContentView.swift in Sources */,
+				A10000000000000000000038 /* WelcomeView.swift in Sources */,
 				A10000000000000000000032 /* FlasherStore.swift in Sources */,
 				A10000000000000000000034 /* WizardDiagrams.swift in Sources */,
 				A10000000000000000000035 /* PogoWingEditor.swift in Sources */,
@@ -201,7 +205,7 @@
 				CODE_SIGN_ENTITLEMENTS = App/HP15CFlasher.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 190;
+				CURRENT_PROJECT_VERSION = 202;
 				DEVELOPMENT_TEAM = 99DA5P7M35;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -213,10 +217,10 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				PRODUCT_BUNDLE_IDENTIFIER = com.machiilabs.HP15CFlasher;
-				PRODUCT_NAME = "HP 15C Flasher";
+				PRODUCT_NAME = "15CE Flasher";
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;
 			};
@@ -229,7 +233,7 @@
 				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 190;
+				CURRENT_PROJECT_VERSION = 202;
 				DEVELOPMENT_TEAM = 99DA5P7M35;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -242,11 +246,11 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				OTHER_CODE_SIGN_FLAGS = "--timestamp --options=runtime";
 				PRODUCT_BUNDLE_IDENTIFIER = com.machiilabs.HP15CFlasher;
-				PRODUCT_NAME = "HP 15C Flasher";
+				PRODUCT_NAME = "15CE Flasher";
 				SWIFT_STRICT_CONCURRENCY = minimal;
 				SWIFT_VERSION = 5.0;
 			};

@@ -134,7 +134,13 @@ public final class FlashCalw {
         return data
     }
 
-    public func writeApplication(_ data: Data, progress: Progress? = nil, verifyProgress: Progress? = nil, verify: Bool = true) throws {
+    public func writeApplication(
+        _ data: Data,
+        progress: Progress? = nil,
+        verifyProgress: Progress? = nil,
+        pageProgress: ((FlashPageWrite) -> Void)? = nil,
+        verify: Bool = true
+    ) throws {
         try FirmwareImage.validate(data, requireExactSize: true)
         let address = FlashLayout.applicationStart
         guard FlashLayout.isSafeApplicationRange(address: address, length: UInt32(data.count)) else {
@@ -171,6 +177,12 @@ public final class FlashCalw {
             _ = try withTimeout("writing page \(index + 1) of \(pageCount)") {
                 try applet.write(flashOffset: flashOffset, data: pageData)
             }
+            pageProgress?(FlashPageWrite(
+                flashOffset: flashOffset,
+                pageIndex: index,
+                pageCount: pageCount,
+                pageData: pageData
+            ))
             progress?(Double(index + 1) / Double(pageCount))
         }
         progress?(1.0)

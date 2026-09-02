@@ -6,7 +6,7 @@ struct HP15CFlasherApp: App {
     @StateObject private var store = FlasherStore()
 
     var body: some Scene {
-        Window("HP 15C Flasher", id: "flasher-main") {
+        Window("15CE Flasher", id: "flasher-main") {
             ContentView()
                 .environmentObject(store)
                 .onAppear { store.start() }

@@ -22,9 +22,12 @@ public final class SimulatedCalculatorTransport: ByteTransport {
         storeWord(FlashCalw.cpuid, 0x410FC241)
         storeWord(FlashCalw.fsr, FlashCalw.fsrFRDY)
         if preloadApplication {
+            // Factory-style dump so DEMO backup assesses as 9090h (safe to proceed).
             for i in 0..<FlashLayout.expectedFirmwareByteCount {
-                memory[FlashLayout.applicationStart &+ UInt32(i)] = UInt8((i * 17) & 0xFF)
+                memory[FlashLayout.applicationStart &+ UInt32(i)] = 0
             }
+            memory[FlashLayout.applicationStart] = 0x90
+            memory[FlashLayout.applicationStart &+ 1] = 0x90
         }
     }
 

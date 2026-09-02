@@ -67,7 +67,7 @@ echo "Signing identity: ${IDENTITY}"
 
 DIST_DIR="${ROOT}/dist"
 STAGE_DIR="$(mktemp -d /private/tmp/hp15c-flasher.XXXXXX)"
-VERSIONED_DMG="${DIST_DIR}/HP15CFlasher-${MARKETING}-${NEW_BUILD}.dmg"
+VERSIONED_DMG="${DIST_DIR}/15CEFlasher-${MARKETING}-${NEW_BUILD}.dmg"
 BUILD_LOG=$(mktemp -t hp15c-package.XXXXXX)
 
 cleanup() {

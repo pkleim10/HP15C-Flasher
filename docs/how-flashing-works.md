@@ -1,26 +1,8 @@
-# How HP 15C Flasher programs the Collector’s Edition
+# How 15CE Flasher programs the Collector’s Edition
 
-This note explains what happens when you flash firmware with **HP 15C Flasher**, without assuming you already know SAM-BA jargon.
+This note explains what happens when you flash firmware with **15CE Flasher**, without assuming you already know SAM-BA jargon.
 
 It is about the **HP 15C Collector’s Edition (CE)** only — the calculator that talks USB over the official pogo programming cable. It does **not** apply to the older Limited Edition or other Voyagers that use a different cable protocol.
-
----
-
-## Background: the chip, Atmel, Microchip, and SAM-BA
-
-The original 1982 HP 15C (and the 2011 Limited Edition) used HP’s own **Nut** processor. The Collector’s Edition does not. Inside the CE is an **ATSAM4LC2C**: a single-chip computer, or **MCU** (microcontroller), with a CPU, flash, RAM, and USB on one piece of silicon. That MCU runs a Voyager-compatible firmware image. Same keyboard and math from the user’s point of view; different chip.
-
-**Atmel** designed that SAM family of microcontrollers and the way you program them over USB. **Microchip** bought Atmel in 2016, so datasheets and tools now say Microchip. The silicon and the programming protocol are the same Atmel design.
-
-**SAM-BA** (SAM Boot Assistant) is Atmel’s standard programming path for these chips — not an HP invention. The CE is an HP-branded calculator designed and manufactured by HP’s licensees (Moravia Consulting, and Royal Consumer in some regions), not by HP Inc. engineering. They used the same Atmel/Microchip ATSAM4L MCU family as recent HP 12C models, and the stock SAM-BA programming stack that comes with that chip. The pogo cable’s ERASE and RESET buttons hit the chip’s usual SAM-BA entry pins.
-
-SAM-BA is three related pieces:
-
-1. **The monitor (bootloader)** — A tiny program already in the calculator’s flash (`0x0000–0x3FFF`). After ERASE+RESET it speaks USB and accepts short commands. The version string `v1.1 Oct 16 2012 17:15:20` is Atmel’s, not HP’s. This app never overwrites that region.
-2. **The host** — Software on a computer that talks that protocol. Officially that is Windows **SAM-BA 2.16/2.18**. HP 15C Flasher is a native Mac host for the same protocol.
-3. **The SRAM applet** — A small helper the host copies into RAM and runs. The monitor itself must not program flash (it lives in flash; the flash controller would stall it). The applet does the erase/write, then goes away. This app ships Atmel’s official `applet-flash-sam4l4.bin` for that.
-
-The **calculator application** above `0x4000` is the Voyager image you choose as a `.bin` (HP-branded firmware from the licensee, not this app). This download does not include that file. Mach II Labs is not affiliated with HP, Atmel, Microchip, or Moravia.
 
 ---
 
@@ -30,7 +12,7 @@ Think of three actors:
 
 | Who | Where it runs | Job |
 |-----|---------------|-----|
-| **HP 15C Flasher** (this Mac app) | Your Mac | Opens the USB link, splits the firmware file into pages, sends commands, checks results |
+| **15CE Flasher** (this Mac app) | Your Mac | Opens the USB link, splits the firmware file into pages, sends commands, checks results |
 | **SAM-BA monitor** (“bootloader”) | Inside the calculator’s **flash**, at the bottom | Tiny resident program that wakes in “programming mode” and accepts short commands over USB |
 | **Flash applet** | Loaded temporarily into calculator **RAM**, then discarded | Official Atmel helper that knows how to erase/program this chip’s flash hardware |
 
@@ -40,7 +22,7 @@ Windows Atmel **SAM-BA** does the same kind of thing with the same family of hel
 
 ---
 
-## Two kinds of memory 
+## Two kinds of memory (this trips everyone up)
 
 The chip has **flash** and **SRAM**. They are different address spaces — like two separate filing cabinets with different number ranges.
 
@@ -60,7 +42,7 @@ Holds temporary working data. When you leave programming mode or remove power, S
 
 The CE uses an **ATSAM4LC2C** with **128 KB** of flash (`0x00000`–`0x1FFFF`).
 
-HP 15C Flasher only ever writes the **application** region. It refuses to write below `0x4000`, so the bootloader stays intact.
+15CE Flasher only ever writes the **application** region. It refuses to write below `0x4000`, so the bootloader stays intact.
 
 ```text
 Flash address        What lives here                         Size
@@ -75,7 +57,7 @@ Flash address        What lives here                         Size
                      │  The 114,688-byte (.bin) image     │  (0x1C000)
                      │  you choose in the app.            │
                      │                                    │
-                     │  ← HP 15C Flasher writes ONLY here │
+                     │  ← 15CE Flasher writes ONLY here │
                      │                                    │
 0x1FFFF              └────────────────────────────────────┘
                      (end of 128 KB flash)
@@ -121,9 +103,9 @@ SRAM address         What lives here
                      │  Flash applet binary                       │
                      │  applet-flash-sam4l4.bin (~2.6 KB)         │
                      │  Loaded from the Mac, then run.            │
-                     │  Mailbox (commands / status / arguments)   │
+0x20002040           │  Mailbox (commands / status / arguments)   │
                      │  First field: “command” word               │
-0x20002040           ├────────────────────────────────────────────┤
+                     ├────────────────────────────────────────────┤
                      │  Applet code / data continues…             │
                      │  Page buffer (512 bytes) — address told    │
                      │  to the host after INIT                    │
@@ -244,7 +226,7 @@ So the design is deliberate:
 | Term | Meaning |
 |------|---------|
 | **CE** | HP 15C Collector’s Edition |
-| **SAM-BA** | Atmel/Microchip “SAM Boot Assistant” — monitor + host protocol + optional SRAM applet for programming SAM micros |
+| **SAM-BA** | Atmel/Microchip “SAM Boot Assistance” — monitor + host tools for programming SAM micros |
 | **Monitor / bootloader** | Resident program in flash `0x0000–0x3FFF` |
 | **Applet** | Temporary RAM helper that programs flash |
 | **Mailbox** | Shared SRAM struct where host and applet exchange command / status / args |
@@ -262,3 +244,7 @@ So the design is deliberate:
 - `Sources/HP15CFlasherCore/SambaFlashAppletImage.swift` — embedded official `.bin`  
 
 Mach II Labs is not affiliated with HP, Atmel, or Microchip. This app does not include HP firmware.
+
+## Disclaimer
+
+15CE Flasher and related documentation are provided as is, without warranty of any kind. Although we have employed several safeguards to help keep this software safe, flashing firmware can wipe user memory, leave the calculator unusable, or permanently brick the device. You are solely responsible for backups, choosing a correct firmware file, and following the app’s instructions. If the instructions are not clear in DEMO mode, do not execute in FLASH mode. Mach II Labs is not liable for damage, data loss, or repair costs arising from use of this software.

@@ -1,4 +1,4 @@
-# HP 15C Flasher
+# 15CE Flasher
 
 Native macOS app that flashes **HP 15C Collector’s Edition** firmware over the official USB pogo programming cable. Windows SAM-BA is not required.
 
@@ -13,9 +13,13 @@ A Mach II Labs product. Free forever. It does not include HP firmware. Mach II L
 
 **Do not use this cable or this app** on an HP 15C Limited Edition, a pre-2015 HP 12C, an HP 20b, or an HP 30b. Those pogo ports are a different protocol and voltage; the cable can destroy them.
 
+## Disclaimer
+
+15CE Flasher and related documentation are provided as is, without warranty of any kind. Although we have employed several safeguards to help keep this software safe, flashing firmware can wipe user memory, leave the calculator unusable, or permanently brick the device. You are solely responsible for backups, choosing a correct firmware file, and following the app’s instructions. If the instructions are not clear in DEMO mode, do not execute in FLASH mode. Mach II Labs is not liable for damage, data loss, or repair costs arising from use of this software.
+
 ## Install
 
-Download `HP15CFlasher-x.y.z-N.dmg` from [machiilabs.com](https://machiilabs.com). Verify the SHA-256 posted with the file, then drag **HP 15C Flasher** to Applications.
+Download `15CEFlasher-x.y.z-N.dmg` from [machiilabs.com](https://machiilabs.com). Verify the SHA-256 posted with the file, then drag **15CE Flasher** to Applications.
 
 The bootloader at `0x0000–0x3FFF` is never overwritten. Writes start at `0x04000`.
 
@@ -40,6 +44,10 @@ Beginner-friendly walkthrough of the bootloader, SRAM applet, paging, and memory
 ## Acknowledgments
 
 The SRAM flash helper is `applet-flash-sam4l4.bin` from Atmel SAM-BA 2.16, © 2011–2012 Atmel Corporation, redistributed under the SAM Software Package License. See [THIRD_PARTY.md](THIRD_PARTY.md). Atmel’s name is not used to endorse this product.
+
+## License
+
+Mach II Labs source is [MIT](LICENSE). Forks and other apps based on this code are welcome. Keep the copyright notice and the credit that Mach II Labs is the original developer of the free 15CE Flasher. The Atmel applet stays under its own license.
 
 ## Build from source
 

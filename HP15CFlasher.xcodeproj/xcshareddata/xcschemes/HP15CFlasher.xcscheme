@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "A10000000000000000000002"
-               BuildableName = "HP 15C Flasher.app"
+               BuildableName = "15CE Flasher.app"
                BlueprintName = "HP15CFlasher"
                ReferencedContainer = "container:HP15CFlasher.xcodeproj">
             </BuildableReference>
@@ -44,7 +44,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A10000000000000000000002"
-            BuildableName = "HP 15C Flasher.app"
+            BuildableName = "15CE Flasher.app"
             BlueprintName = "HP15CFlasher"
             ReferencedContainer = "container:HP15CFlasher.xcodeproj">
          </BuildableReference>
@@ -61,7 +61,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "A10000000000000000000002"
-            BuildableName = "HP 15C Flasher.app"
+            BuildableName = "15CE Flasher.app"
             BlueprintName = "HP15CFlasher"
             ReferencedContainer = "container:HP15CFlasher.xcodeproj">
          </BuildableReference>

@@ -1,6 +1,8 @@
 # Third-party notices
 
-HP 15C Flasher is a Mach II Labs product. It does not include HP firmware.
+15CE Flasher is a Mach II Labs product. Mach II Labs is the original
+developer of the free version. Application source is MIT (`LICENSE`).
+This file covers third-party material only. It does not include HP firmware.
 
 ## SAM-BA SAM4L flash applet
 

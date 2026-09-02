@@ -14,7 +14,46 @@ public enum FlashProgressPhase: Sendable {
     case verifying
 }
 
+public struct FlashPageWrite: Sendable, Equatable {
+    public let flashOffset: UInt32
+    public let pageIndex: Int
+    public let pageCount: Int
+    public let pageData: Data
+
+    public init(flashOffset: UInt32, pageIndex: Int, pageCount: Int, pageData: Data) {
+        self.flashOffset = flashOffset
+        self.pageIndex = pageIndex
+        self.pageCount = pageCount
+        self.pageData = pageData
+    }
+
+    public var header: String {
+        String(format: "Page %d of %d · 0x%05X", pageIndex + 1, pageCount, flashOffset)
+    }
+
+    /// Application page as little-endian 16-bit words (four hex digits each).
+    public func formattedWordLines(wordsPerLine: Int = 16) -> [String] {
+        var lines: [String] = []
+        var words: [String] = []
+        var index = 0
+        while index + 1 < pageData.count {
+            let word = UInt16(pageData[index]) | (UInt16(pageData[index + 1]) << 8)
+            words.append(String(format: "%04X", word))
+            index += 2
+            if words.count == wordsPerLine {
+                lines.append(words.joined(separator: " "))
+                words.removeAll(keepingCapacity: true)
+            }
+        }
+        if !words.isEmpty {
+            lines.append(words.joined(separator: " "))
+        }
+        return lines
+    }
+}
+
 public typealias FlashProgress = (_ fraction: Double, _ phase: FlashProgressPhase) -> Void
+public typealias FlashPageProgress = @Sendable (FlashPageWrite) -> Void
 
 /// Coordinates cable detection, image checks, and SAM-BA flash I/O.
 public struct Flasher {
@@ -110,7 +149,8 @@ public struct Flasher {
         address: UInt32 = FlashLayout.applicationStart,
         client: SambaClient? = nil,
         verify: Bool = true,
-        progress: FlashProgress? = nil
+        progress: FlashProgress? = nil,
+        pageProgress: FlashPageProgress? = nil
     ) throws {
         let plan = try planWrite(firmwareURL: firmwareURL, address: address)
         if client == nil, plan.port == nil {
@@ -122,6 +162,7 @@ public struct Flasher {
                 plan.image.data,
                 progress: { progress?($0, .writing) },
                 verifyProgress: { progress?($0, .verifying) },
+                pageProgress: pageProgress,
                 verify: verify
             )
         }

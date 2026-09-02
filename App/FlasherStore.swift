@@ -3,6 +3,11 @@ import Foundation
 import SwiftUI
 import HP15CFlasherCore
 
+enum FlasherMode: String, CaseIterable {
+    case demo
+    case flash
+}
+
 @MainActor
 final class FlasherStore: ObservableObject {
     @Published var wizard = WizardState()
@@ -21,17 +26,59 @@ final class FlasherStore: ObservableObject {
     @Published var progressCaption: String?
     @Published var progressIsVerify = false
     @Published var progressBarID = 0
+    @Published var flashPageHeader: String?
+    @Published var flashPageLines: [String] = []
     @Published var lastError: String?
     @Published var successMessage: String?
     @Published var confirmFlash = false
     @Published var confirmSkipBackup = false
     @Published var usingSimulator = false
+    @Published var showWelcome = true
+    @Published var selectedMode: FlasherMode = FlasherStore.savedMode()
+    @Published var hasCompletedDemo = UserDefaults.standard.bool(forKey: FlasherStore.demoCompletedDefaultsKey)
 
     private var client: SambaClient?
     private var pollTask: Task<Void, Never>?
     private var flasher = Flasher()
     private var simulator: SimulatedCalculatorTransport?
     private var simulatorHotKeyMonitor: Any?
+    private var demoConnectAfter: Date?
+
+    private static let modeDefaultsKey = "flasherMode"
+    private static let demoCompletedDefaultsKey = "demoModeCompleted"
+    private static let demoCableDetectedSeconds: TimeInterval = 3
+
+    private static func savedMode() -> FlasherMode {
+        if let raw = UserDefaults.standard.string(forKey: modeDefaultsKey),
+           let mode = FlasherMode(rawValue: raw) {
+            return mode
+        }
+        return .demo
+    }
+
+    private func resetWizardForNewSession() {
+        let keepFirmware = wizard.firmwareOK
+        wizard = WizardState()
+        wizard.firmwareOK = keepFirmware
+        backupSkipped = false
+        backupFileName = nil
+        backupAssessment = nil
+        if keepFirmware, let firmwareURL, let data = try? Data(contentsOf: firmwareURL) {
+            refreshFirmwareAssessment(selected: data)
+        } else {
+            firmwareAssessment = nil
+        }
+        wizard.flashSucceeded = false
+        lastError = nil
+        successMessage = nil
+        progress = nil
+        progressCaption = nil
+        clearFlashPagePreview()
+        identity = nil
+        portPath = nil
+        sambaVersion = nil
+        demoConnectAfter = nil
+    }
 
     var canBackup: Bool {
         !wizard.isBusy && client != nil && identity?.isSupported15C == true
@@ -43,6 +90,13 @@ final class FlasherStore: ObservableObject {
 
     var chipLabel: String {
         identity?.name ?? "Not connected"
+    }
+
+    /// Test-menu checksum of the chosen file, for example `0A0Ah`.
+    var expectedChecksumShort: String {
+        let prefix = "ChE - - "
+        guard expectedChecksumLabel.hasPrefix(prefix) else { return "----h" }
+        return String(expectedChecksumLabel.dropFirst(prefix.count))
     }
 
     var stepBanner: (text: String, caution: Bool)? {
@@ -70,18 +124,36 @@ final class FlasherStore: ObservableObject {
     }
 
     func start() {
-        usingSimulator = false
-        simulator = nil
-        flasher = Flasher()
         installSimulatorHotKey()
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { break }
-                await self.refreshConnection()
+                if !self.showWelcome {
+                    await self.refreshConnection()
+                }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
+    }
+
+    func beginChosenSession() {
+        UserDefaults.standard.set(selectedMode.rawValue, forKey: Self.modeDefaultsKey)
+        resetWizardForNewSession()
+        showWelcome = false
+        setUsingSimulator(selectedMode == .demo)
+    }
+
+    func returnToWelcome() {
+        disconnect()
+        wizard.identitySupported = false
+        wizard.isBusy = false
+        lastError = nil
+        successMessage = nil
+        progress = nil
+        progressCaption = nil
+        demoConnectAfter = nil
+        showWelcome = true
     }
 
     func stop() {
@@ -94,12 +166,28 @@ final class FlasherStore: ObservableObject {
     func advance() {
         wizard.advance()
         if wizard.step == .programmingMode {
-            status = "Waiting for SAM-BA…"
+            status = usingSimulator
+                ? "Cable detected. Hold ERASE, press RESET, then release ERASE."
+                : "Waiting for SAM-BA…"
             Task { await refreshConnection() }
+        }
+        if usingSimulator, wizard.step == .checksum {
+            markDemoCompleted()
         }
     }
 
+    private func markDemoCompleted() {
+        guard !hasCompletedDemo else { return }
+        hasCompletedDemo = true
+        UserDefaults.standard.set(true, forKey: Self.demoCompletedDefaultsKey)
+    }
+
     func goBack() {
+        if wizard.step == .programmingMode {
+            disconnect()
+            wizard.identitySupported = false
+            demoConnectAfter = nil
+        }
         wizard.goBack()
     }
 
@@ -192,6 +280,9 @@ final class FlasherStore: ObservableObject {
     }
 
     func done() {
+        if usingSimulator {
+            markDemoCompleted()
+        }
         NSApp.terminate(nil)
     }
 
@@ -246,6 +337,10 @@ final class FlasherStore: ObservableObject {
                     Task { @MainActor in
                         self.applyFlashProgress(fraction, phase)
                     }
+                } pageProgress: { page in
+                    Task { @MainActor in
+                        self.applyFlashPageWrite(page)
+                    }
                 }
                 await MainActor.run {
                     self.finishBusySuccess("Flashed and verified.") {
@@ -264,7 +359,11 @@ final class FlasherStore: ObservableObject {
             guard Self.isSimulatorToggle(event) else { return event }
             Task { @MainActor in
                 guard let self else { return }
-                self.setUsingSimulator(!self.usingSimulator)
+                if self.showWelcome {
+                    self.selectedMode = self.selectedMode == .demo ? .flash : .demo
+                } else {
+                    self.setUsingSimulator(!self.usingSimulator)
+                }
             }
             return nil
         }
@@ -287,7 +386,10 @@ final class FlasherStore: ObservableObject {
     func setUsingSimulator(_ enabled: Bool) {
         disconnect()
         wizard.identitySupported = false
+        demoConnectAfter = nil
         usingSimulator = enabled
+        selectedMode = enabled ? .demo : .flash
+        UserDefaults.standard.set(selectedMode.rawValue, forKey: Self.modeDefaultsKey)
         if enabled {
             let sim = SimulatedCalculatorTransport(operationDelay: 0.010, preloadApplication: true)
             simulator = sim
@@ -296,7 +398,7 @@ final class FlasherStore: ObservableObject {
                 openTransport: { _ in sim },
                 flashCommandSettleSeconds: 0
             )
-            status = "DEMO: connecting simulated ATSAM4LC2C…"
+            status = "DEMO: connecting simulated calculator…"
             Task { await refreshConnection() }
         } else {
             simulator = nil
@@ -321,6 +423,17 @@ final class FlasherStore: ObservableObject {
         progressCaption = caption
         progressIsVerify = false
         status = statusText
+        clearFlashPagePreview()
+    }
+
+    private func clearFlashPagePreview() {
+        flashPageHeader = nil
+        flashPageLines = []
+    }
+
+    private func applyFlashPageWrite(_ page: FlashPageWrite) {
+        flashPageHeader = page.header
+        flashPageLines = page.formattedWordLines()
     }
 
     private func finishBusySuccess(_ message: String, extra: () -> Void) {
@@ -328,6 +441,7 @@ final class FlasherStore: ObservableObject {
         progress = 1
         progressCaption = nil
         progressIsVerify = false
+        clearFlashPagePreview()
         successMessage = message
         status = "Connected: \(chipLabel)"
         extra()
@@ -338,6 +452,7 @@ final class FlasherStore: ObservableObject {
         progress = nil
         progressCaption = nil
         progressIsVerify = false
+        clearFlashPagePreview()
         lastError = error.localizedDescription
         status = "Operation failed."
         disconnect()
@@ -352,6 +467,7 @@ final class FlasherStore: ObservableObject {
             progressIsVerify = false
             status = "Writing firmware…"
         case .verifying:
+            clearFlashPagePreview()
             if !progressIsVerify {
                 progress = nil
                 progressBarID += 1
@@ -420,13 +536,30 @@ final class FlasherStore: ObservableObject {
             portPath = nil
             return
         }
-        if client != nil { return }
+        if let existing = client {
+            if await probePing(existing) {
+                return
+            }
+            disconnect()
+            wizard.identitySupported = false
+        }
         portPath = modems.first?.path ?? cables.first?.path
+        if usingSimulator {
+            if demoConnectAfter == nil {
+                demoConnectAfter = Date().addingTimeInterval(Self.demoCableDetectedSeconds)
+            }
+            if let until = demoConnectAfter, Date() < until {
+                status = "Cable detected. Hold ERASE, press RESET, then release ERASE."
+                return
+            }
+        }
         if modems.isEmpty {
             status = "Cable detected. Hold ERASE, press RESET, then release ERASE."
             return
         }
-        status = "Waiting for SAM-BA…"
+        if !usingSimulator {
+            status = "Waiting for SAM-BA…"
+        }
         let tool = flasher
         let probed = await probeConnect(tool)
         switch probed {
@@ -464,6 +597,24 @@ final class FlasherStore: ObservableObject {
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + 2.5) {
                 gate.finish(.failure(FlasherError.sambaTimeout()))
+            }
+        }
+    }
+
+    /// CHIPID read off the main thread. Detects RESET leaving SAM-BA while USB stays up.
+    private func probePing(_ client: SambaClient) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let gate = ResumeOnce(continuation)
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    try client.ping(timeout: 1.5)
+                    gate.finish(true)
+                } catch {
+                    gate.finish(false)
+                }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.5) {
+                gate.finish(false)
             }
         }
     }

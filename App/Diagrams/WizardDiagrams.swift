@@ -423,7 +423,7 @@ private struct Step1ScreenMiniature: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("HP 15C Flasher")
+                Text("15CE Flasher")
                     .font(.largeTitle.weight(.semibold))
                 Text("Native SAM-BA programmer for the Collector’s Edition")
                     .foregroundStyle(.secondary)
