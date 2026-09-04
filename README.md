@@ -2,6 +2,8 @@
 
 Native macOS app that flashes **HP 15C Collector’s Edition** firmware over the official USB pogo programming cable. Windows SAM-BA is not required.
 
+Choose **DEMO** to walk through the wizard safely, **FLASH** for one calculator, or **BATCH** to flash many units in sequence with the same firmware.
+
 A Mach II Labs product. Free forever. It does not include HP firmware. Mach II Labs is not affiliated with HP, Atmel, or Microchip.
 
 ## Requirements

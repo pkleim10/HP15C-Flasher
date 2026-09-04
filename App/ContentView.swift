@@ -9,6 +9,8 @@ struct ContentView: View {
         Group {
             if store.showWelcome {
                 WelcomeView()
+            } else if store.isBatchSession {
+                BatchView()
             } else {
                 wizardColumn
                     .padding(24)

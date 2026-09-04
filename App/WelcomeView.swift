@@ -25,6 +25,12 @@ struct WelcomeView: View {
                     badge: nil,
                     detail: "Talk to a real HP 15C Collector’s Edition over the pogo cable. User memory will be wiped. A wrong file or a write to the bootloader region can brick the calculator."
                 )
+                modeCard(
+                    mode: .batch,
+                    title: "BATCH",
+                    badge: nil,
+                    detail: "Flash many Collector’s Editions in sequence with the same firmware. For experienced operators only. Each unit still needs ERASE+RESET; user memory is wiped every time."
+                )
             }
 
             VStack(alignment: .leading, spacing: 6) {

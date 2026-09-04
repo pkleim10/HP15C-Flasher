@@ -187,6 +187,26 @@ final class VoyagerFirmwareChecksumTests: XCTestCase {
     }
 }
 
+final class BatchBackupNamingTests: XCTestCase {
+    func testNumberedBackupFilename() {
+        XCTAssertEqual(
+            BatchBackupNaming.filename(sessionStamp: "20260904-141530", unitNumber: 1),
+            "hp15c-20260904-141530-001.bin"
+        )
+        XCTAssertEqual(
+            BatchBackupNaming.filename(sessionStamp: "20260904-141530", unitNumber: 12),
+            "hp15c-20260904-141530-012.bin"
+        )
+    }
+
+    func testNumberedBackupFileURL() {
+        let folder = URL(fileURLWithPath: "/tmp/backups")
+        let url = BatchBackupNaming.fileURL(in: folder, sessionStamp: "20260904-141530", unitNumber: 3)
+        XCTAssertEqual(url.lastPathComponent, "hp15c-20260904-141530-003.bin")
+        XCTAssertEqual(url.deletingLastPathComponent().path, "/tmp/backups")
+    }
+}
+
 final class SimulatedCalculatorTests: XCTestCase {
     func testFlashPageWriteFormatsLittleEndianWords() {
         var page = Data(repeating: 0, count: 4)
@@ -238,5 +258,23 @@ final class SimulatedCalculatorTests: XCTestCase {
         let saved = try Data(contentsOf: url)
         XCTAssertEqual(saved.count, FlashLayout.expectedFirmwareByteCount)
         XCTAssertEqual(VoyagerFirmwareChecksum.backupAssessment(of: saved), .factoryOriginal(0x9090))
+    }
+
+    func testSimulatedSequentialFlashWrites() throws {
+        let sim = SimulatedCalculatorTransport(operationDelay: 0, preloadApplication: true)
+        let flasher = Flasher(
+            ports: SimulatedPortListing(),
+            openTransport: { _ in sim },
+            flashCommandSettleSeconds: 0
+        )
+        var image = Data(count: FlashLayout.expectedFirmwareByteCount)
+        image[0] = 0x5A
+        image[1] = 0xA5
+
+        for _ in 0..<2 {
+            let connected = try flasher.connect()
+            defer { connected.client.close() }
+            try FlashCalw(samba: connected.client).writeApplication(image, verify: true)
+        }
     }
 }

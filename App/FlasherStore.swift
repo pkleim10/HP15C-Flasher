@@ -6,6 +6,21 @@ import HP15CFlasherCore
 enum FlasherMode: String, CaseIterable {
     case demo
     case flash
+    case batch
+}
+
+enum BatchPhase: Equatable {
+    case setup
+    case waiting
+    case backingUp
+    case flashing
+    case unitDone
+    case error
+}
+
+enum BatchBackupChoice: String, Equatable {
+    case skip
+    case autoSave
 }
 
 @MainActor
@@ -36,6 +51,21 @@ final class FlasherStore: ObservableObject {
     @Published var showWelcome = true
     @Published var selectedMode: FlasherMode = FlasherStore.savedMode()
     @Published var hasCompletedDemo = UserDefaults.standard.bool(forKey: FlasherStore.demoCompletedDefaultsKey)
+    @Published var batchPhase: BatchPhase = .setup
+    @Published var batchUnitNumber = 0
+    @Published var batchBackupChoice: BatchBackupChoice = .skip
+    @Published var batchBackupFolder: URL?
+
+    var isBatchSession: Bool {
+        !showWelcome && selectedMode == .batch
+    }
+
+    var canStartBatch: Bool {
+        wizard.firmwareOK && (batchBackupChoice == .skip || batchBackupFolder != nil)
+    }
+
+    private var batchSessionStamp: String?
+    private var batchUnitWorkTask: Task<Void, Never>?
 
     private var client: SambaClient?
     private var pollTask: Task<Void, Never>?
@@ -46,6 +76,7 @@ final class FlasherStore: ObservableObject {
 
     private static let modeDefaultsKey = "flasherMode"
     private static let demoCompletedDefaultsKey = "demoModeCompleted"
+    private static let batchFirmwarePathKey = "batchFirmwarePath"
     private static let demoCableDetectedSeconds: TimeInterval = 3
 
     private static func savedMode() -> FlasherMode {
@@ -130,7 +161,12 @@ final class FlasherStore: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { break }
                 if !self.showWelcome {
-                    await self.refreshConnection()
+                    if self.isBatchSession {
+                        await self.refreshBatchConnection()
+                        await self.runBatchStepIfReady()
+                    } else {
+                        await self.refreshConnection()
+                    }
                 }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
@@ -139,12 +175,119 @@ final class FlasherStore: ObservableObject {
 
     func beginChosenSession() {
         UserDefaults.standard.set(selectedMode.rawValue, forKey: Self.modeDefaultsKey)
-        resetWizardForNewSession()
+        if selectedMode == .batch {
+            beginBatchSession()
+        } else {
+            resetWizardForNewSession()
+            showWelcome = false
+            setUsingSimulator(selectedMode == .demo)
+        }
+    }
+
+    func beginBatchSession() {
+        batchUnitWorkTask?.cancel()
+        batchUnitWorkTask = nil
+        resetBatchSession()
         showWelcome = false
-        setUsingSimulator(selectedMode == .demo)
+        setUsingSimulator(false)
+        restoreBatchFirmware()
+    }
+
+    private func saveBatchFirmwarePath(_ url: URL) {
+        UserDefaults.standard.set(url.path, forKey: Self.batchFirmwarePathKey)
+    }
+
+    private func restoreBatchFirmware() {
+        guard let path = UserDefaults.standard.string(forKey: Self.batchFirmwarePathKey),
+              !path.isEmpty,
+              FileManager.default.fileExists(atPath: path) else {
+            if UserDefaults.standard.string(forKey: Self.batchFirmwarePathKey) != nil {
+                UserDefaults.standard.removeObject(forKey: Self.batchFirmwarePathKey)
+            }
+            return
+        }
+        applyFirmware(from: URL(fileURLWithPath: path))
+    }
+
+    private func resetBatchSession() {
+        batchPhase = .setup
+        batchUnitNumber = 0
+        batchBackupChoice = .skip
+        batchBackupFolder = nil
+        batchSessionStamp = nil
+        firmwareURL = nil
+        firmwareDetail = "No firmware selected."
+        expectedChecksumLabel = "ChE - - ----h"
+        wizard = WizardState()
+        firmwareAssessment = nil
+        lastError = nil
+        successMessage = nil
+        progress = nil
+        progressCaption = nil
+        clearFlashPagePreview()
+        identity = nil
+        portPath = nil
+        sambaVersion = nil
+        demoConnectAfter = nil
+        disconnect()
+    }
+
+    func chooseBatchBackupFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.title = "Choose backup folder"
+        panel.message = "Each unit’s backup is saved here as hp15c-YYYYMMDD-HHMMSS-NNN.bin."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        batchBackupFolder = url
+    }
+
+    func startBatch() {
+        guard canStartBatch else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        batchSessionStamp = formatter.string(from: Date())
+        batchUnitNumber = 1
+        batchPhase = .waiting
+        lastError = nil
+        successMessage = nil
+        status = "Waiting for SAM-BA. Hold ERASE, press RESET, then release ERASE."
+        disconnect()
+    }
+
+    func prepareNextBatchUnit() {
+        batchUnitNumber += 1
+        batchPhase = .waiting
+        lastError = nil
+        successMessage = nil
+        status = "Waiting for SAM-BA. Hold ERASE, press RESET, then release ERASE."
+        disconnect()
+    }
+
+    func retryBatchUnit() {
+        batchPhase = .waiting
+        lastError = nil
+        successMessage = nil
+        status = "Waiting for SAM-BA. Hold ERASE, press RESET, then release ERASE."
+        disconnect()
+    }
+
+    func stopBatch() {
+        batchUnitWorkTask?.cancel()
+        batchUnitWorkTask = nil
+        wizard.isBusy = false
+        progress = nil
+        progressCaption = nil
+        clearFlashPagePreview()
+        disconnect()
+        NSApp.terminate(nil)
     }
 
     func returnToWelcome() {
+        batchUnitWorkTask?.cancel()
+        batchUnitWorkTask = nil
         disconnect()
         wizard.identitySupported = false
         wizard.isBusy = false
@@ -153,6 +296,9 @@ final class FlasherStore: ObservableObject {
         progress = nil
         progressCaption = nil
         demoConnectAfter = nil
+        batchPhase = .setup
+        batchUnitNumber = 0
+        batchSessionStamp = nil
         showWelcome = true
     }
 
@@ -212,6 +358,9 @@ final class FlasherStore: ObservableObject {
             wizard.firmwareOK = true
             lastError = nil
             refreshFirmwareAssessment(selected: image.data)
+            if isBatchSession {
+                saveBatchFirmwarePath(image.url)
+            }
         } catch {
             firmwareURL = nil
             firmwareDetail = error.localizedDescription
@@ -219,6 +368,10 @@ final class FlasherStore: ObservableObject {
             wizard.firmwareOK = false
             firmwareAssessment = nil
             lastError = error.localizedDescription
+            if isBatchSession,
+               UserDefaults.standard.string(forKey: Self.batchFirmwarePathKey) == url.path {
+                UserDefaults.standard.removeObject(forKey: Self.batchFirmwarePathKey)
+            }
         }
     }
 
@@ -325,6 +478,19 @@ final class FlasherStore: ObservableObject {
     func flash() {
         guard let firmwareURL else { return }
         confirmFlash = false
+        performFlash { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.wizard.flashSucceeded = true
+            case .failure:
+                break
+            }
+        }
+    }
+
+    func performFlash(completion: @escaping (Result<Void, Error>) -> Void) {
+        guard let firmwareURL else { return }
         let url = firmwareURL
         let existing = client
         let tool = flasher
@@ -343,12 +509,42 @@ final class FlasherStore: ObservableObject {
                     }
                 }
                 await MainActor.run {
-                    self.finishBusySuccess("Flashed and verified.") {
-                        self.wizard.flashSucceeded = true
-                    }
+                    self.finishBusySuccess("Flashed and verified.") {}
+                    completion(.success(()))
                 }
             } catch {
-                await MainActor.run { self.finishBusyFailure(error) }
+                await MainActor.run {
+                    self.finishBusyFailure(error)
+                    completion(.failure(error))
+                }
+            }
+        }
+    }
+
+    func performBackup(to url: URL, completion: @escaping (Result<Void, Error>) -> Void) {
+        let existing = client
+        let tool = flasher
+        beginBusy(statusText: "Reading firmware…", caption: "Backing up")
+        Task.detached { [weak self] in
+            guard let self else { return }
+            do {
+                let samba = try await FlasherStore.preparedClient(existing: existing, tool: tool, store: self)
+                try tool.read(to: url, client: samba) { fraction, _ in
+                    Task { @MainActor in
+                        self.progress = fraction
+                        self.progressCaption = "Backing up"
+                        self.progressIsVerify = false
+                    }
+                }
+                await MainActor.run {
+                    self.finishBusySuccess("Backup saved.") {}
+                    completion(.success(()))
+                }
+            } catch {
+                await MainActor.run {
+                    self.finishBusyFailure(error)
+                    completion(.failure(error))
+                }
             }
         }
     }
@@ -360,8 +556,8 @@ final class FlasherStore: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if self.showWelcome {
-                    self.selectedMode = self.selectedMode == .demo ? .flash : .demo
-                } else {
+                    self.cycleWelcomeMode()
+                } else if !self.isBatchSession {
                     self.setUsingSimulator(!self.usingSimulator)
                 }
             }
@@ -383,13 +579,23 @@ final class FlasherStore: ObservableObject {
         }
     }
 
+    private func cycleWelcomeMode() {
+        switch selectedMode {
+        case .demo: selectedMode = .flash
+        case .flash: selectedMode = .batch
+        case .batch: selectedMode = .demo
+        }
+    }
+
     func setUsingSimulator(_ enabled: Bool) {
         disconnect()
         wizard.identitySupported = false
         demoConnectAfter = nil
         usingSimulator = enabled
-        selectedMode = enabled ? .demo : .flash
-        UserDefaults.standard.set(selectedMode.rawValue, forKey: Self.modeDefaultsKey)
+        if selectedMode != .batch {
+            selectedMode = enabled ? .demo : .flash
+            UserDefaults.standard.set(selectedMode.rawValue, forKey: Self.modeDefaultsKey)
+        }
         if enabled {
             let sim = SimulatedCalculatorTransport(operationDelay: 0.010, preloadApplication: true)
             simulator = sim
@@ -615,6 +821,132 @@ final class FlasherStore: ObservableObject {
             }
             DispatchQueue.global().asyncAfter(deadline: .now() + 2.5) {
                 gate.finish(false)
+            }
+        }
+    }
+
+    private func refreshBatchConnection() async {
+        guard batchPhase == .waiting || batchPhase == .error else { return }
+        if wizard.isBusy || batchUnitWorkTask != nil { return }
+
+        let cables = (try? flasher.listProgrammingCables()) ?? []
+        let modems = cables.filter { $0.name.lowercased().hasPrefix("cu.usbmodem") }
+        if cables.isEmpty {
+            if client != nil {
+                disconnect()
+            }
+            status = "Waiting for programming cable…"
+            portPath = nil
+            return
+        }
+        if let existing = client {
+            if await probePing(existing) {
+                return
+            }
+            disconnect()
+        }
+        portPath = modems.first?.path ?? cables.first?.path
+        if modems.isEmpty {
+            status = "Cable detected. Hold ERASE, press RESET, then release ERASE."
+            return
+        }
+        status = "Waiting for SAM-BA…"
+        let tool = flasher
+        let probed = await probeConnect(tool)
+        switch probed {
+        case .success(let connected):
+            adopt(connected)
+            if connected.identity.isSupported15C {
+                status = "Connected: \(connected.identity.name)"
+                lastError = nil
+            } else {
+                status = "Unsupported chip: \(connected.identity.name)"
+                lastError = FlasherError.unsupportedDevice(
+                    name: connected.identity.name,
+                    cidr: connected.identity.cidr,
+                    exid: connected.identity.exid
+                ).localizedDescription
+                batchPhase = .error
+            }
+        case .failure:
+            disconnect()
+            portPath = modems.first?.path ?? cables.first?.path
+            status = "Waiting for SAM-BA. Hold ERASE, press RESET, then release ERASE."
+        }
+    }
+
+    private func runBatchStepIfReady() async {
+        guard batchPhase == .waiting else { return }
+        guard batchUnitWorkTask == nil, !wizard.isBusy else { return }
+        guard client != nil, identity?.isSupported15C == true else { return }
+        startBatchUnitWork()
+    }
+
+    private func startBatchUnitWork() {
+        guard batchPhase == .waiting, batchUnitWorkTask == nil, !wizard.isBusy else { return }
+        guard firmwareURL != nil else { return }
+        let url = firmwareURL!
+        batchUnitWorkTask?.cancel()
+        batchUnitWorkTask = Task { [weak self] in
+            guard let self else { return }
+            let firmwareURL = url
+            if self.batchBackupChoice == .autoSave,
+               let folder = self.batchBackupFolder,
+               let stamp = self.batchSessionStamp {
+                await MainActor.run {
+                    self.batchPhase = .backingUp
+                    self.lastError = nil
+                }
+                let backupURL = BatchBackupNaming.fileURL(
+                    in: folder,
+                    sessionStamp: stamp,
+                    unitNumber: self.batchUnitNumber
+                )
+                let backupResult = await self.runBackupOperation(to: backupURL)
+                if Task.isCancelled { return }
+                if case .failure(let error) = backupResult {
+                    await MainActor.run {
+                        self.batchPhase = .error
+                        self.lastError = error.localizedDescription
+                        self.batchUnitWorkTask = nil
+                    }
+                    return
+                }
+            }
+            await MainActor.run {
+                self.batchPhase = .flashing
+                self.lastError = nil
+            }
+            let flashResult = await self.runFlashOperation(firmwareURL: firmwareURL)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                switch flashResult {
+                case .success:
+                    self.batchPhase = .unitDone
+                    self.successMessage = "Unit \(self.batchUnitNumber) flashed and verified."
+                    self.status = "Unit \(self.batchUnitNumber) complete."
+                    self.disconnect()
+                case .failure(let error):
+                    self.batchPhase = .error
+                    self.lastError = error.localizedDescription
+                }
+                self.batchUnitWorkTask = nil
+            }
+        }
+    }
+
+    private func runBackupOperation(to url: URL) async -> Result<Void, Error> {
+        await withCheckedContinuation { continuation in
+            performBackup(to: url) { result in
+                continuation.resume(returning: result)
+            }
+        }
+    }
+
+    private func runFlashOperation(firmwareURL: URL) async -> Result<Void, Error> {
+        await withCheckedContinuation { continuation in
+            performFlash { result in
+                continuation.resume(returning: result)
             }
         }
     }
