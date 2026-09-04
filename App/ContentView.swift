@@ -373,7 +373,7 @@ struct ContentView: View {
         return VStack(alignment: .leading, spacing: 6) {
             Text(header)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(ink)
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(lines.enumerated()), id: \.offset) { _, line in

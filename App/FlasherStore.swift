@@ -88,17 +88,14 @@ final class FlasherStore: ObservableObject {
     }
 
     private func resetWizardForNewSession() {
-        let keepFirmware = wizard.firmwareOK
         wizard = WizardState()
-        wizard.firmwareOK = keepFirmware
+        firmwareURL = nil
+        firmwareDetail = "No firmware selected."
+        expectedChecksumLabel = "ChE - - ----h"
+        firmwareAssessment = nil
         backupSkipped = false
         backupFileName = nil
         backupAssessment = nil
-        if keepFirmware, let firmwareURL, let data = try? Data(contentsOf: firmwareURL) {
-            refreshFirmwareAssessment(selected: data)
-        } else {
-            firmwareAssessment = nil
-        }
         wizard.flashSucceeded = false
         lastError = nil
         successMessage = nil
@@ -299,6 +296,11 @@ final class FlasherStore: ObservableObject {
         batchPhase = .setup
         batchUnitNumber = 0
         batchSessionStamp = nil
+        firmwareURL = nil
+        firmwareDetail = "No firmware selected."
+        expectedChecksumLabel = "ChE - - ----h"
+        wizard.firmwareOK = false
+        firmwareAssessment = nil
         showWelcome = true
     }
 
