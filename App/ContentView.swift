@@ -9,6 +9,8 @@ struct ContentView: View {
         Group {
             if store.showWelcome {
                 WelcomeView()
+            } else if store.isProbeSession {
+                ProbeView()
             } else if store.isBatchSession {
                 BatchView()
             } else {
@@ -48,14 +50,15 @@ struct ContentView: View {
                 stepSidebar
                 VStack(alignment: .leading, spacing: 16) {
                     stepBody
-                    if store.wizard.isBusy, let progress = store.progress {
+                    if let progress = store.progress,
+                       store.wizard.isBusy || (store.wizard.step == .flash && store.wizard.flashSucceeded) {
                         labeledProgress(
                             store.progressCaption ?? "Working",
                             value: progress,
                             tint: store.progressIsVerify ? .green : (store.progressCaption == "Flashing" ? .blue : Color.accentColor),
                             identity: store.progressBarID
                         )
-                        if store.progressCaption == "Flashing", let header = store.flashPageHeader {
+                        if store.wizard.step == .flash, let header = store.flashPageHeader {
                             flashPagePreview(header: header, lines: store.flashPageLines)
                         }
                     }

@@ -31,6 +31,12 @@ struct WelcomeView: View {
                     badge: nil,
                     detail: "Flash many Collector’s Editions in sequence with the same firmware. For experienced operators only. Each unit still needs ERASE+RESET; user memory is wiped every time."
                 )
+                modeCard(
+                    mode: .probe,
+                    title: "Connection Probe",
+                    badge: nil,
+                    detail: "Test cable detection on real hardware without choosing firmware or flashing. Confirms SAM-BA sees the calculator before you start FLASH or BATCH."
+                )
             }
 
             VStack(alignment: .leading, spacing: 6) {

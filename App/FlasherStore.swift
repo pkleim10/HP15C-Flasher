@@ -7,6 +7,7 @@ enum FlasherMode: String, CaseIterable {
     case demo
     case flash
     case batch
+    case probe
 }
 
 enum BatchPhase: Equatable {
@@ -58,6 +59,17 @@ final class FlasherStore: ObservableObject {
 
     var isBatchSession: Bool {
         !showWelcome && selectedMode == .batch
+    }
+
+    var isProbeSession: Bool {
+        !showWelcome && selectedMode == .probe
+    }
+
+    var probePortName: String? {
+        guard let path = portPath else { return nil }
+        let name = URL(fileURLWithPath: path).lastPathComponent
+        guard name.lowercased().hasPrefix("cu.usbmodem") else { return nil }
+        return name
     }
 
     var canStartBatch: Bool {
@@ -158,7 +170,9 @@ final class FlasherStore: ObservableObject {
             while !Task.isCancelled {
                 guard let self else { break }
                 if !self.showWelcome {
-                    if self.isBatchSession {
+                    if self.isProbeSession {
+                        await self.refreshProbeConnection()
+                    } else if self.isBatchSession {
                         await self.refreshBatchConnection()
                         await self.runBatchStepIfReady()
                     } else {
@@ -174,6 +188,11 @@ final class FlasherStore: ObservableObject {
         UserDefaults.standard.set(selectedMode.rawValue, forKey: Self.modeDefaultsKey)
         if selectedMode == .batch {
             beginBatchSession()
+        } else if selectedMode == .probe {
+            resetWizardForNewSession()
+            showWelcome = false
+            setUsingSimulator(false)
+            status = "Waiting for programming cable…"
         } else {
             resetWizardForNewSession()
             showWelcome = false
@@ -511,7 +530,7 @@ final class FlasherStore: ObservableObject {
                     }
                 }
                 await MainActor.run {
-                    self.finishBusySuccess("Flashed and verified.") {}
+                    self.finishFlashSuccess()
                     completion(.success(()))
                 }
             } catch {
@@ -559,7 +578,7 @@ final class FlasherStore: ObservableObject {
                 guard let self else { return }
                 if self.showWelcome {
                     self.cycleWelcomeMode()
-                } else if !self.isBatchSession {
+                } else if !self.isBatchSession && !self.isProbeSession {
                     self.setUsingSimulator(!self.usingSimulator)
                 }
             }
@@ -585,7 +604,8 @@ final class FlasherStore: ObservableObject {
         switch selectedMode {
         case .demo: selectedMode = .flash
         case .flash: selectedMode = .batch
-        case .batch: selectedMode = .demo
+        case .batch: selectedMode = .probe
+        case .probe: selectedMode = .demo
         }
     }
 
@@ -594,7 +614,7 @@ final class FlasherStore: ObservableObject {
         wizard.identitySupported = false
         demoConnectAfter = nil
         usingSimulator = enabled
-        if selectedMode != .batch {
+        if selectedMode != .batch && selectedMode != .probe {
             selectedMode = enabled ? .demo : .flash
             UserDefaults.standard.set(selectedMode.rawValue, forKey: Self.modeDefaultsKey)
         }
@@ -655,6 +675,16 @@ final class FlasherStore: ObservableObject {
         extra()
     }
 
+    /// Step 5: keep page 224 and the full verification bar after flash completes.
+    private func finishFlashSuccess() {
+        wizard.isBusy = false
+        progress = 1
+        progressCaption = "Verifying"
+        progressIsVerify = true
+        successMessage = "Flashed and verified."
+        status = "Connected: \(chipLabel)"
+    }
+
     private func finishBusyFailure(_ error: Error) {
         wizard.isBusy = false
         progress = nil
@@ -675,7 +705,6 @@ final class FlasherStore: ObservableObject {
             progressIsVerify = false
             status = "Writing firmware…"
         case .verifying:
-            clearFlashPagePreview()
             if !progressIsVerify {
                 progress = nil
                 progressBarID += 1
@@ -827,6 +856,77 @@ final class FlasherStore: ObservableObject {
         }
     }
 
+    private func setStatusIfChanged(_ newStatus: String) {
+        guard status != newStatus else { return }
+        status = newStatus
+    }
+
+    private func refreshProbeConnection() async {
+        guard isProbeSession else { return }
+        if wizard.isBusy { return }
+
+        let cables = (try? flasher.listProgrammingCables()) ?? []
+        let modems = cables.filter { $0.name.lowercased().hasPrefix("cu.usbmodem") }
+        let wasConnected = identity?.isSupported15C == true
+
+        if cables.isEmpty {
+            releaseClient()
+            identity = nil
+            portPath = nil
+            sambaVersion = nil
+            lastError = nil
+            setStatusIfChanged("No programming cable detected")
+            return
+        }
+
+        if modems.isEmpty {
+            releaseClient()
+            identity = nil
+            sambaVersion = nil
+            lastError = nil
+            portPath = cables.first?.path
+            setStatusIfChanged("Cable detected. Hold ERASE, press RESET, then release ERASE.")
+            return
+        }
+
+        portPath = modems.first?.path
+
+        let probed = await probeConnect(flasher)
+        switch probed {
+        case .success(let connected):
+            let sameChip = identity?.cidr == connected.identity.cidr
+                && identity?.exid == connected.identity.exid
+            identity = connected.identity
+            portPath = connected.port.path
+            sambaVersion = connected.client.version
+            releaseClient()
+            if connected.identity.isSupported15C {
+                if !wasConnected || !sameChip {
+                    setStatusIfChanged("Connected: \(connected.identity.name)")
+                }
+                lastError = nil
+            } else {
+                setStatusIfChanged("Unsupported chip: \(connected.identity.name)")
+                lastError = FlasherError.unsupportedDevice(
+                    name: connected.identity.name,
+                    cidr: connected.identity.cidr,
+                    exid: connected.identity.exid
+                ).localizedDescription
+            }
+        case .failure:
+            releaseClient()
+            identity = nil
+            sambaVersion = nil
+            lastError = nil
+            portPath = modems.first?.path
+            if wasConnected {
+                setStatusIfChanged("Waiting for SAM-BA. Hold ERASE, press RESET, then release ERASE.")
+            } else if !status.hasPrefix("Waiting") && !status.hasPrefix("Cable detected") {
+                setStatusIfChanged("Waiting for SAM-BA. Hold ERASE, press RESET, then release ERASE.")
+            }
+        }
+    }
+
     private func refreshBatchConnection() async {
         guard batchPhase == .waiting || batchPhase == .error else { return }
         if wizard.isBusy || batchUnitWorkTask != nil { return }
@@ -953,9 +1053,13 @@ final class FlasherStore: ObservableObject {
         }
     }
 
-    private func disconnect() {
+    private func releaseClient() {
         client?.close()
         client = nil
+    }
+
+    private func disconnect() {
+        releaseClient()
         identity = nil
         portPath = nil
         sambaVersion = nil
